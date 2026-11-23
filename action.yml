@@ -1,0 +1,72 @@
+name: obsidian-cmd-runner
+description: Runs a command of an Obsidian plugin in a vault, without the window of Obsidian. Told nothing else, it builds a site with vault-to-site.
+branding:
+  icon: terminal
+  color: purple
+inputs:
+  vault:
+    description: The folder of the vault
+    default: .
+  obsidian-version:
+    description: A version of Obsidian as 1.15.1, or latest
+    default: latest
+  plugins:
+    description: "Plugins to put into the vault for the run, one a line: owner/repo, owner/repo@tag, or a folder"
+    default: ""
+  commands:
+    description: "Ids of commands to run, one a line, as plugin-id:command-id"
+    default: ""
+  args:
+    description: What the commands are given, as JSON
+    default: ""
+  config:
+    description: A file of settings for vault-to-site, when no command is named
+    default: ""
+  timeout:
+    description: Seconds a command may take
+    default: "600"
+  vault-plugins:
+    description: false to leave the plugins the vault has turned on off
+    default: "true"
+  github-token:
+    description: A token for a plugin in a repository that is not public
+    default: ""
+outputs:
+  result:
+    description: What the run gave back, as JSON
+    value: ${{ steps.run.outputs.result }}
+  obsidian-version:
+    description: The version of Obsidian that ran
+    value: ${{ steps.version.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 24
+    - id: version
+      shell: bash
+      run: echo "version=$(node "$GITHUB_ACTION_PATH/bin/obsidian-cmd-runner.js" resolve-version "${{ inputs.obsidian-version }}")" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/obsidian-cmd-runner
+        key: obsidian-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+    - id: run
+      shell: bash
+      env:
+        INPUT_PLUGINS: ${{ inputs.plugins }}
+        INPUT_COMMANDS: ${{ inputs.commands }}
+        INPUT_ARGS: ${{ inputs.args }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OBSIDIAN_CMD_RUNNER_CACHE: ~/.cache/obsidian-cmd-runner
+      run: |
+        set -euo pipefail
+        export OBSIDIAN_CMD_RUNNER_CACHE="$HOME/.cache/obsidian-cmd-runner"
+        args=(--vault "${{ inputs.vault }}" --obsidian-version "${{ steps.version.outputs.version }}" --timeout "${{ inputs.timeout }}" --json)
+        while IFS= read -r line; do [ -n "$line" ] && args+=(--plugin "$line"); done <<< "$INPUT_PLUGINS"
+        while IFS= read -r line; do [ -n "$line" ] && args+=(--command "$line"); done <<< "$INPUT_COMMANDS"
+        if [ -n "$INPUT_ARGS" ]; then printf '%s' "$INPUT_ARGS" > "$RUNNER_TEMP/obsidian-cmd-runner-args.json"; args+=(--args-file "$RUNNER_TEMP/obsidian-cmd-runner-args.json"); fi
+        if [ -n "${{ inputs.config }}" ]; then args+=(--config "${{ inputs.config }}"); fi
+        if [ "${{ inputs.vault-plugins }}" = "false" ]; then args+=(--no-vault-plugins); fi
+        node "$GITHUB_ACTION_PATH/bin/obsidian-cmd-runner.js" "${args[@]}" | tee "$RUNNER_TEMP/obsidian-cmd-runner-result.json"
+        { echo "result<<OBSIDIAN_CMD_RUNNER_EOF"; cat "$RUNNER_TEMP/obsidian-cmd-runner-result.json"; echo "OBSIDIAN_CMD_RUNNER_EOF"; } >> "$GITHUB_OUTPUT"

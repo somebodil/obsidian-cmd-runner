@@ -1,0 +1,9 @@
+{
+  "id": "runner-probe",
+  "name": "Runner probe",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Commands for testing obsidian-cmd-runner.",
+  "author": "obsidian-cmd-runner",
+  "isDesktopOnly": false
+}

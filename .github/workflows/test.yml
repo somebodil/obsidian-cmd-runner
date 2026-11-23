@@ -1,0 +1,78 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      obsidian-version:
+        description: A version of Obsidian for the runs in a real Obsidian
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+  # In a real Obsidian, on the kind of computer a build server is
+  obsidian:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["${{ inputs.obsidian-version || 'latest' }}", "1.8.10"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: version
+        run: echo "version=$(node bin/obsidian-cmd-runner.js resolve-version "${{ matrix.version }}")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/obsidian-cmd-runner
+          key: obsidian-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+      - name: What the computer has
+        run: |
+          echo "xvfb-run: $(command -v xvfb-run || echo none)"
+          echo "DISPLAY: ${DISPLAY:-none}"
+          nproc; free -m | head -2
+      - name: Runs in a real Obsidian
+        env:
+          OBSIDIAN_VERSION: ${{ steps.version.outputs.version }}
+        run: node --test test/e2e.ts
+
+  # The action itself, as another repository would use it
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: A vault
+        run: |
+          mkdir -p vault/Sub
+          printf '# Home\n\n[[Other]]\n' > vault/Home.md
+          printf '# Other\n\n[[Home]]\n' > vault/Other.md
+      - id: run
+        uses: ./
+        with:
+          vault: vault
+          plugins: ./test/fixtures/plugins/runner-probe
+          commands: runner-probe:report
+          args: '{"from": "the action"}'
+      - name: What it gave back
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+        run: |
+          echo "$RESULT"
+          node -e 'const r = JSON.parse(process.env.RESULT); if (!r.ok || r.commands[0].result.args.from !== "the action" || r.commands[0].result.notes.length !== 2) process.exit(1)'

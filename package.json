@@ -1,0 +1,36 @@
+{
+  "name": "obsidian-cmd-runner",
+  "version": "0.1.0",
+  "description": "Runs a command of an Obsidian plugin without the window of Obsidian: on a server, or from a script",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "obsidian-cmd-runner": "bin/obsidian-cmd-runner.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "action.yml"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "e2e": "node test/e2e.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0"
+  }
+}

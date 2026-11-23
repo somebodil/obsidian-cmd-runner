@@ -1,0 +1,237 @@
+/** What the command line asks for. Nothing here touches a file or the network, so it is tested with plain Node.js. */
+
+export interface Options {
+  /** The folder of the vault */
+  vault: string;
+  /** A version of Obsidian as `1.15.1`, or `latest` */
+  obsidianVersion: string;
+  /** An Obsidian that is installed already: the app on macOS, the program elsewhere. Nothing is downloaded then. */
+  obsidianApp: string | null;
+  /** Plugins to put into the vault for the run: `owner/repo`, `owner/repo@tag`, or a folder */
+  plugins: string[];
+  /** Ids of commands, run one after the other */
+  commands: string[];
+  /** A file of JavaScript that is run inside Obsidian */
+  evalFile: string | null;
+  /** What a command is given: `window.obsidianCmdRunner.args` */
+  args: Record<string, unknown>;
+  /** A file of settings for the plugin that builds a site, when no command is named */
+  config: string | null;
+  /** When a command counts as done: `auto`, `none`, or `file:<path>` */
+  wait: string;
+  /** Seconds a command may take */
+  timeout: number;
+  /** False to leave the plugins the vault has turned on off */
+  vaultPlugins: boolean;
+  /** True to leave in the vault what the run put there */
+  keep: boolean;
+  cacheDir: string | null;
+  /** A token for GitHub, for a plugin in a repository that is not public */
+  githubToken: string | null;
+  json: boolean;
+  verbose: boolean;
+  /** True to let the window be seen where it can be hidden */
+  show: boolean;
+}
+
+export type Parsed =
+  | { kind: "run"; options: Options }
+  | { kind: "resolve-version"; version: string }
+  | { kind: "install"; options: Options }
+  | { kind: "help" }
+  | { kind: "version" }
+  | { kind: "error"; message: string };
+
+export const DEFAULTS: Options = {
+  vault: ".",
+  obsidianVersion: "latest",
+  obsidianApp: null,
+  plugins: [],
+  commands: [],
+  evalFile: null,
+  args: {},
+  config: null,
+  wait: "auto",
+  timeout: 600,
+  vaultPlugins: true,
+  keep: false,
+  cacheDir: null,
+  githubToken: null,
+  json: false,
+  verbose: false,
+  show: false,
+};
+
+export const HELP = `obsidian-cmd-runner: runs a command of an Obsidian plugin without the window of Obsidian
+
+Usage
+  obsidian-cmd-runner [options]                 run commands in a vault
+  obsidian-cmd-runner install [options]         only fetch Obsidian
+  obsidian-cmd-runner resolve-version [version] print the version that would be used
+
+With no --command and no --eval, a site is built with the plugin vault-to-site.
+
+Options
+  --vault <folder>             the vault (default: the folder you are in)
+  --obsidian-version <v>       a version as 1.15.1, or latest (default: latest)
+  --obsidian-app <path>        use an Obsidian that is installed, and fetch nothing
+  --plugin <spec>              put a plugin into the vault for the run; may be given again
+                               owner/repo, owner/repo@tag, or a folder with main.js and manifest.json
+  --command <id>               the id of a command, as plugin-id:command-id; may be given again
+  --eval <file.js>             run a file of JavaScript inside Obsidian
+  --arg <key=value>            what the command is given; may be given again
+  --args-file <file.json>      the same, from a file
+  --config <file.json>         settings for vault-to-site (default: vault-to-site.json in the vault)
+  --wait <auto|none|file:PATH> when a command counts as done (default: auto)
+  --timeout <seconds>          how long a command may take (default: 600)
+  --no-vault-plugins           leave the plugins the vault has turned on off
+  --keep                       leave in the vault what the run put there
+  --cache-dir <folder>         where Obsidian is kept between runs
+  --github-token <token>       for a plugin in a repository that is not public (or set GITHUB_TOKEN)
+  --json                       print the result as JSON
+  --verbose                    print what Obsidian writes to its console
+  --show                       do not hide the window
+  --help, --version
+`;
+
+/** A value given as `key=value`: read as JSON when it is JSON, else kept as text */
+function valueOf(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Reads the command line.
+ *
+ * @param readJson reads a file of JSON for `--args-file`; an error it throws is reported with the name of the file
+ */
+export function parseArgs(argv: readonly string[], readJson: (path: string) => unknown = () => ({})): Parsed {
+  const options: Options = { ...DEFAULTS, plugins: [], commands: [], args: {} };
+  const rest = [...argv];
+  let kind: "run" | "install" = "run";
+  if (rest[0] === "resolve-version") {
+    return { kind: "resolve-version", version: rest[1] ?? "latest" };
+  }
+  if (rest[0] === "install") {
+    kind = "install";
+    rest.shift();
+  } else if (rest[0] === "run") {
+    rest.shift();
+  }
+  while (rest.length > 0) {
+    const flag = rest.shift() ?? "";
+    // `--flag=value` and `--flag value` are the same
+    const equals = flag.startsWith("--") ? flag.indexOf("=") : -1;
+    const name = equals === -1 ? flag : flag.slice(0, equals);
+    const value = (): string | null => (equals === -1 ? (rest.shift() ?? null) : flag.slice(equals + 1));
+    const need = (): string => {
+      const given = value();
+      if (given === null) {
+        throw new Error(`${name} needs a value.`);
+      }
+      return given;
+    };
+    try {
+      switch (name) {
+        case "--help":
+        case "-h":
+          return { kind: "help" };
+        case "--version":
+        case "-v":
+          return { kind: "version" };
+        case "--vault":
+          options.vault = need();
+          break;
+        case "--obsidian-version":
+          options.obsidianVersion = need();
+          break;
+        case "--obsidian-app":
+          options.obsidianApp = need();
+          break;
+        case "--plugin":
+          options.plugins.push(need());
+          break;
+        case "--command":
+          options.commands.push(need());
+          break;
+        case "--eval":
+          options.evalFile = need();
+          break;
+        case "--arg": {
+          const pair = need();
+          const at = pair.indexOf("=");
+          if (at < 1) {
+            throw new Error(`--arg is written as key=value, not "${pair}".`);
+          }
+          options.args[pair.slice(0, at)] = valueOf(pair.slice(at + 1));
+          break;
+        }
+        case "--args-file": {
+          const file = need();
+          let read: unknown;
+          try {
+            read = readJson(file);
+          } catch (error) {
+            throw new Error(`"${file}" could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          if (typeof read !== "object" || read === null || Array.isArray(read)) {
+            throw new Error(`"${file}" has to hold an object, as {"key": "value"}.`);
+          }
+          Object.assign(options.args, read);
+          break;
+        }
+        case "--config":
+          options.config = need();
+          break;
+        case "--wait": {
+          const wait = need();
+          if (wait !== "auto" && wait !== "none" && !(wait.startsWith("file:") && wait.length > 5)) {
+            throw new Error(`--wait is auto, none, or file:<path>, not "${wait}".`);
+          }
+          options.wait = wait;
+          break;
+        }
+        case "--timeout": {
+          const seconds = Number(need());
+          if (!Number.isFinite(seconds) || seconds <= 0) {
+            throw new Error("--timeout is a number of seconds above zero.");
+          }
+          options.timeout = seconds;
+          break;
+        }
+        case "--no-vault-plugins":
+          options.vaultPlugins = false;
+          break;
+        case "--keep":
+          options.keep = true;
+          break;
+        case "--cache-dir":
+          options.cacheDir = need();
+          break;
+        case "--github-token":
+          options.githubToken = need();
+          break;
+        case "--json":
+          options.json = true;
+          break;
+        case "--verbose":
+          options.verbose = true;
+          break;
+        case "--show":
+          options.show = true;
+          break;
+        default:
+          throw new Error(`"${flag}" is not an option. See --help.`);
+      }
+    } catch (error) {
+      return { kind: "error", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+  if (options.evalFile !== null && options.commands.length > 0) {
+    return { kind: "error", message: "Give --command or --eval, not both." };
+  }
+  return { kind, options };
+}
