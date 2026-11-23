@@ -7,9 +7,13 @@ export function vaultId(path: string): string {
   return createHash("sha256").update(path).digest("hex").slice(0, 16);
 }
 
-/** The list of vaults that makes Obsidian open one vault when it starts */
+/**
+ * What Obsidian keeps about itself, for a run: one vault, to be opened when
+ * it starts, and no look for a newer version, which a run that is over in a
+ * moment has no use for.
+ */
 export function vaultList(path: string, now: number): string {
-  return JSON.stringify({ vaults: { [vaultId(path)]: { path, ts: now, open: true } } });
+  return JSON.stringify({ vaults: { [vaultId(path)]: { path, ts: now, open: true } }, updateDisabled: true });
 }
 
 const isThere = (path: string): Promise<boolean> =>

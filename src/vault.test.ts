@@ -14,8 +14,8 @@ describe("vaultId and vaultList", () => {
     assert.match(vaultId("/a/b"), /^[0-9a-f]{16}$/);
   });
 
-  it("lists one vault, to be opened", () => {
-    assert.deepEqual(JSON.parse(vaultList("/my vault", 5)), { vaults: { [vaultId("/my vault")]: { path: "/my vault", ts: 5, open: true } } });
+  it("lists one vault, to be opened, and asks for no look for updates", () => {
+    assert.deepEqual(JSON.parse(vaultList("/my vault", 5)), { vaults: { [vaultId("/my vault")]: { path: "/my vault", ts: 5, open: true } }, updateDisabled: true });
   });
 });
 

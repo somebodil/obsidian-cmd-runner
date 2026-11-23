@@ -52,6 +52,8 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     const vault = await newVault("report");
     const result = await go(vault, { commands: ["runner-probe:report"], args: { greeting: "hello", n: 3 } });
     assert.equal(result.ok, true);
+    // For the one who reads the log of a run: where the time of a run goes on this computer
+    console.log(`Obsidian ${result.obsidian}, milliseconds: ${Object.entries(result.timings).map(([name, millis]) => `${name} ${String(millis)}`).join(", ")}`);
     assert.equal(result.vault, "report");
     assert.match(result.obsidian, /^\d+\.\d+\.\d+$/);
     if (process.env.OBSIDIAN_APP === undefined && wantedVersion !== "latest") {
