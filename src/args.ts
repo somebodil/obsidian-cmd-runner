@@ -17,7 +17,11 @@ export interface Options {
   args: Record<string, unknown>;
   /** A file of settings for the plugin that builds a site, when no command is named */
   config: string | null;
-  /** When a command counts as done: `auto`, `none`, or `file:<path>` */
+  /**
+   * When a command counts as done: `auto` (it says so itself, or else its
+   * work is followed until none is left), `none` (it is not waited for), or
+   * `file:<path>` (when that file is written)
+   */
   wait: string;
   /** Seconds a command may take */
   timeout: number;
@@ -82,7 +86,8 @@ Options
   --arg <key=value>            what the command is given; may be given again
   --args-file <file.json>      the same, from a file
   --config <file.json>         settings for vault-to-site (default: vault-to-site.json in the vault)
-  --wait <auto|none|file:PATH> when a command counts as done (default: auto)
+  --wait <auto|none|file:PATH> when a command counts as done (default: auto:
+                               it says so, or else when its work has ended)
   --timeout <seconds>          how long a command may take (default: 600)
   --no-vault-plugins           leave the plugins the vault has turned on off
   --keep                       leave in the vault what the run put there

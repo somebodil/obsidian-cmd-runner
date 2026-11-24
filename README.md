@@ -104,11 +104,27 @@ Do not run it on a vault that is open in your own Obsidian at the same time: two
 
 ## When a command counts as done
 
-Obsidian starts a command and does not say when its work is over. So there are three ways:
+Obsidian starts a command and does not say when its work is over: the command goes on by itself, and Obsidian stays open. A run has to end, so it has to know. Told nothing (`--wait auto`), it knows in one of two ways:
 
-- **The command says so.** A command that knows of the runner tells it when it is done, and what came of it. This is what `auto` waits for, when the command takes part.
+- **The run follows the work of the command.** This is for a command of any plugin: one that knows nothing of the runner. What the command starts is followed, and what that starts in its turn: what it waits for, the reading and writing of files, requests to the web, other programs, timers. The command has ended when nothing of it is left. A command that throws, or that fails later with nothing to catch it, makes the run fail, with what it said.
+- **The command says so.** A command that knows of the runner tells it when it is done, and what came of it: see below. That is exact, and it gives the run a result. When a command does this, its work is not followed.
+
+Or you say:
+
 - **A file is written.** `--wait file:out/report.json` waits until that file is in the vault. A file that is there before the command starts, as from an earlier run, does not count: the run waits until it is written anew.
-- **Not at all.** `--wait none`, and `auto` for a command that does not take part: the command is started, and the run goes on.
+- **Not at all.** `--wait none`: the command is started, and the run goes on.
+
+### What following the work can and cannot tell
+
+A command is taken to have ended when nothing it started is going on, and nothing has been for a moment. This is right for the ways a plugin usually works, and it was tried on a build of 142 notes with the word of the plugin left out: the run ended within a second after the plugin was done, never before. But it is worked out from what goes on in Obsidian, not said by the command, so know its edges:
+
+- **A command that waits for somebody does not end.** One that opens a window and waits for a click is not done, and nobody is there to click. The run ends when its time is over (`--timeout`), with 124, and says what was left. With `--verbose` it also says where in the code that was started.
+- **What a command leaves running is not waited for:** a timer that repeats, and a timer it sets for more than two seconds with nothing waiting for it, as one that takes a notice away.
+- **Work that is started in a way the run cannot see is not followed:** a message to a worker, or to another window, with nothing in the plugin waiting for the answer. A plugin that waits for the answer is followed. For a command that ends too early for this reason, name a file to wait for.
+- **A command of Obsidian itself, not of a plugin, is followed only by what it asks of the system.** What Obsidian waits for inside its own code is not counted: some of it stays open for as long as Obsidian runs.
+- **It needs an Obsidian that has Node.js in its page** in the form that can follow work. That was tried with 1.15.1 and 1.8.10. Where it is missing, the run goes on after it has started the command, as with `--wait none`.
+
+What Obsidian shows as a notice while a command runs is printed for the one who watches the run. For a command that knows nothing of the runner, that is what it has to say.
 
 ### For authors of plugins
 
@@ -190,7 +206,9 @@ console.log(result.ok, result.commands[0]?.result);
 
 - **On macOS** with Obsidian 1.15.1, 1.13.7 and 1.5.12, and **on Linux** on the build servers of GitHub with 1.15.1 and 1.8.10, with a screen made for the run and with none: commands that end in each way a command can, a vault with settings and plugins of its own, a command that takes too long, a file of code.
 - **A site** was built through vault-to-site on both: on Linux from a vault of 304 notes, of which the 302 that were marked went in, with every diagram and formula drawn. The site was the same, file for file, with a screen made for the run and with none.
-- **Not tried:** Windows, which it does not fetch Obsidian for yet, and Linux on arm64.
+- **On Linux on arm64** with Obsidian 1.15.1 and no screen: the same commands, and a site of 142 real notes.
+- **Following the work of a command** was tried there, with Obsidian 1.15.1 and 1.8.10, with commands that know nothing of the runner and work each in another way: an `async` function, work that is started and let go, timers and callbacks with no promise at all, another program, waiting for the page to be drawn and for something fetched. Also one that fails at once and one that fails later, one that leaves a repeating timer, a long timer, a notice and a promise nobody keeps behind, and one that waits for a click. And with vault-to-site building a site of 142 notes while what it says of itself was left out: three runs ended 0.8 to 0.9 seconds after the build was done, none before.
+- **Not tried:** Windows, which it does not fetch Obsidian for yet. Following the work of a command on macOS, with an Obsidian older than 1.8.10, and with plugins of others.
 
 ## Development
 

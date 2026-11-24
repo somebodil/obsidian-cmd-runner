@@ -7,7 +7,7 @@ import { defaultCacheDir, installObsidian, programOfApp, resolveVersionKept, wor
 import { chooseScreen, freePort, makeScreen, start, startArgs, type Running } from "./launch.ts";
 import { parsePlugin, placePlugin, removePlaced, type Placed, type PluginSource } from "./plugins.ts";
 import type { Fetch } from "./releases.ts";
-import { offerRunner, runCode, startCommand, turnOn, whenDone, whenIndexed, whenReady, type Outcome } from "./session.ts";
+import { dropUnkept, offerRunner, runCode, startCommand, stopFollowing, turnOn, whenDone, whenIndexed, whenReady, workLeft, type Outcome, type Work } from "./session.ts";
 import { keepSettings, prepareProfile, restoreSettings, type Kept } from "./vault.ts";
 
 /** The plugin that builds a site, and its command: what a run does when it is told nothing else */
@@ -30,6 +30,12 @@ export interface CommandResult {
   ok: boolean;
   /** True when the command said itself when it was done */
   claimed: boolean;
+  /**
+   * What told the run that the command had ended: the command itself
+   * (`said`), its work coming to an end (`work`), a file (`file`), or
+   * nothing, where the run did not wait (`none`)
+   */
+  ended: "said" | "work" | "file" | "none";
   result: unknown;
   error: string | null;
   millis: number;
@@ -95,6 +101,103 @@ export async function whenWritten(file: string, before: FileState, waited: () =>
   while (waited() && !isWritten(before, await fileState(file))) {
     await new Promise((done) => setTimeout(done, 100));
   }
+}
+
+/** For how long nothing of the work of a command may go on before the command is said to have ended, in milliseconds */
+export const CALM = 150;
+/** After how long with nothing left but promises the browser is asked to take away those that nothing can reach */
+export const STALE = 250;
+/** How long the browser is given between two such askings */
+const BETWEEN_COLLECTIONS = 400;
+
+/** What is kept between two looks at the work of a command */
+export interface Watch {
+  /** `Work.moves` at the last look */
+  moves: number;
+  /** Since when nothing has gone on */
+  since: number;
+  /** When the browser was last asked to take away what nothing can reach */
+  collected: number;
+}
+
+/**
+ * Says what a look at the work of a command means.
+ *
+ * A command has ended when nothing of its work is left, nothing is being
+ * asked of the system, and it has stayed so for a moment: between two steps
+ * of a command there can be an instant with nothing open.
+ *
+ * Promises that stay open with nothing else going on are either waiting for
+ * something the run cannot see, or nothing can keep them any more. The
+ * browser is asked to take the second kind away (`collect`), and the first
+ * kind is waited for: a command that waits for a click in a window is not
+ * done, and a run with nobody to click ends when its time is over.
+ */
+export function judgeWork(left: Work, watch: Watch, now: number): "ended" | "failed" | "collect" | "wait" {
+  if (left.failed !== null) {
+    return "failed";
+  }
+  if (left.said) {
+    return "ended";
+  }
+  if (left.moves !== watch.moves || left.going > 0) {
+    watch.moves = left.moves;
+    watch.since = now;
+    return "wait";
+  }
+  const still = now - watch.since;
+  if (left.promise + left.timer + left.frame + left.system === 0) {
+    return still >= CALM ? "ended" : "wait";
+  }
+  if (left.timer + left.frame + left.system === 0 && still >= STALE && now - watch.collected >= BETWEEN_COLLECTIONS) {
+    watch.collected = now;
+    return "collect";
+  }
+  return "wait";
+}
+
+/** What is left of the work of a command, in words: for the one whose run ended because it took too long */
+export function leftInWords(left: Work): string {
+  const count = (many: number, one: string, more: string): string | null => (many === 0 ? null : `${String(many)} ${many === 1 ? one : more}`);
+  const parts = [
+    count(left.promise, "promise", "promises"),
+    count(left.timer, "timer", "timers"),
+    count(left.frame, "call before the next drawing", "calls before the next drawing"),
+    count(left.system, "request to the system", "requests to the system"),
+  ].filter((part) => part !== null);
+  const what = parts.length === 0 ? "nothing that is followed" : parts.join(", ");
+  return left.started.length === 0 ? what : `${what}. Started at: ${left.started.join("; ")}`;
+}
+
+/**
+ * Waits until the work of a command has ended, for a command that does not
+ * say so itself. Looked at forty times a second, and only as long as
+ * somebody waits.
+ *
+ * @param seen told what was left at each look
+ */
+export async function whenWorkEnds(page: Page, waited: () => boolean, seen: (left: Work) => void = () => undefined): Promise<Outcome> {
+  const watch: Watch = { moves: -1, since: Date.now(), collected: 0 };
+  while (waited()) {
+    const left = await workLeft(page);
+    if (left === null) {
+      break;
+    }
+    seen(left);
+    const verdict = judgeWork(left, watch, Date.now());
+    if (verdict === "failed") {
+      return { ok: false, result: null, error: left.failed };
+    }
+    if (verdict === "ended") {
+      // A command that said itself that it is done, later than it should have: what it said counts
+      return left.said ? whenDone(page) : { ok: true, result: null, error: null };
+    }
+    if (verdict === "collect") {
+      await dropUnkept(page);
+    }
+    await new Promise((done) => setTimeout(done, 25));
+  }
+  return { ok: true, result: null, error: null };
 }
 
 /** The file in which a vault keeps the plugins it has turned on */
@@ -276,13 +379,13 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
 
     const results: CommandResult[] = [];
     const limit = options.timeout * 1000;
-    const record = (command: string, claimed: boolean, outcome: Outcome, from: number): boolean => {
-      results.push({ command, ok: outcome.ok, claimed, result: outcome.result, error: outcome.error, millis: clock() - from });
+    const record = (command: string, ended: CommandResult["ended"], outcome: Outcome, from: number): boolean => {
+      results.push({ command, ok: outcome.ok, claimed: ended === "said", ended, result: outcome.result, error: outcome.error, millis: clock() - from });
       return outcome.ok;
     };
     if (code !== null) {
       const from = clock();
-      record("eval", true, await lap("commands", () => within(offerRunner(open, args).then(() => runCode(open, code)), limit, "The code", open, live)), from);
+      record("eval", "said", await lap("commands", () => within(offerRunner(open, args).then(() => runCode(open, code)), limit, "The code", open, live)), from);
     }
     // The file that says a command is done, when one was named
     const file = options.wait.startsWith("file:") ? resolve(vault, options.wait.slice(5)) : null;
@@ -291,27 +394,52 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       // As the file is before the command: it may be there from an earlier run
       const before = file === null ? null : await fileState(file);
       // Starting is part of the time a command may take: a command can do all its work before it gives the page back
-      const started = await lap("commands", () => within(offerRunner(open, args).then(() => startCommand(open, id)), limit, `The command "${id}"`, open, live));
+      const started = await lap("commands", () => within(offerRunner(open, args, options.verbose).then(() => startCommand(open, id)), limit, `The command "${id}"`, open, live));
       if (!started.found) {
         const hint = started.similar.length > 0 ? ` The plugin has: ${started.similar.join(", ")}.` : " Is its plugin in the vault? Name it with --plugin.";
-        record(id, false, { ok: false, result: null, error: `Obsidian has no command "${id}".${hint}` }, from);
+        record(id, "none", { ok: false, result: null, error: `Obsidian has no command "${id}".${hint}` }, from);
         break;
       }
       if (!started.ran) {
-        record(id, false, { ok: false, result: null, error: `The command "${id}" cannot run now: it says that it does not apply.` }, from);
+        record(id, "none", { ok: false, result: null, error: `The command "${id}" cannot run now: it says that it does not apply.` }, from);
+        break;
+      }
+      if (started.threw !== null) {
+        await stopFollowing(open);
+        record(id, "none", { ok: false, result: null, error: started.threw }, from);
         break;
       }
       let outcome: Outcome = { ok: true, result: null, error: null };
+      let ended: CommandResult["ended"] = "none";
       if (file !== null) {
+        ended = "file";
         let waiting = true;
         const written = whenWritten(file, before, () => waiting).then((): Outcome => ({ ok: true, result: null, error: null }));
         outcome = await lap("commands", () => within(written, limit, `The command "${id}"`, open, live)).finally(() => {
           waiting = false;
         });
       } else if (options.wait === "auto" && started.claimed) {
+        ended = "said";
         outcome = await lap("commands", () => within(whenDone(open), limit, `The command "${id}"`, open, live));
+      } else if (options.wait === "auto" && started.followed) {
+        // A command that knows nothing of the run: it has ended when the work it started has
+        ended = "work";
+        let waiting = true;
+        let last: Work | null = null;
+        outcome = await lap("commands", () => within(whenWorkEnds(open, () => waiting, (left) => (last = left)), limit, `The command "${id}"`, open, live))
+          .catch((error: unknown) => {
+            const left = last as Work | null;
+            if (error instanceof RunError && error.exit === EXIT.timeout && left !== null) {
+              throw new RunError(`${error.message} Of its work there was left: ${leftInWords(left)}.`, EXIT.timeout);
+            }
+            throw error;
+          })
+          .finally(() => {
+            waiting = false;
+          });
       }
-      if (!record(id, started.claimed, outcome, from)) {
+      await stopFollowing(open);
+      if (!record(id, ended, outcome, from)) {
         break;
       }
     }

@@ -118,12 +118,19 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     assert.equal(existsSync(join(vault, ".obsidian")), false);
   });
 
-  it("does not wait for a command that knows nothing of the run, unless told what to wait for", async () => {
+  it("waits for a command that knows nothing of the run, by its work or by a file, and not when told not to", async () => {
     const quick = await newVault("plain");
-    const result = await go(quick, { commands: ["runner-probe:plain"] });
+    const result = await go(quick, { commands: ["runner-probe:plain"], wait: "none" });
     assert.equal(result.ok, true);
     assert.equal(result.commands[0]?.claimed, false);
+    assert.equal(result.commands[0]?.ended, "none");
     assert.equal(existsSync(join(quick, "probe-plain.txt")), false, "the run ended before the command wrote its file");
+
+    // Told nothing, the run follows the work of the command, and ends when the file is written
+    const followed = await newVault("plain-work");
+    const byWork = await go(followed, { commands: ["runner-probe:plain"] });
+    assert.equal(byWork.commands[0]?.ended, "work");
+    assert.equal(await readFile(join(followed, "probe-plain.txt"), "utf8"), "written");
 
     const waited = await newVault("plain-file");
     await go(waited, { commands: ["runner-probe:plain"], wait: "file:probe-plain.txt" });
@@ -133,6 +140,65 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     const before = (await stat(join(waited, "probe-plain.txt"))).mtimeMs;
     await go(waited, { commands: ["runner-probe:plain"], wait: "file:probe-plain.txt" });
     assert.notEqual((await stat(join(waited, "probe-plain.txt"))).mtimeMs, before, "the run ended only after the command wrote its file again");
+  });
+
+  it("knows when the work of a command has ended, in whatever way the command does it", async () => {
+    const vault = await newVault("quiet");
+    // What each command writes last, and the least time its work takes
+    const ways: [string, string, number][] = [
+      ["quiet-async", "done", 500],
+      ["quiet-dropped", "done", 400],
+      ["quiet-callbacks", "done", 500],
+      ["quiet-program", "done 0 by the program", 600],
+      ["quiet-page", "done fetched", 100],
+    ];
+    const result = await go(vault, { commands: ways.map(([id]) => "runner-probe:" + id) });
+    assert.equal(result.ok, true);
+    for (const [at, [id, last, least]] of ways.entries()) {
+      const one = result.commands[at];
+      assert.equal(one?.ended, "work", id);
+      assert.equal(one?.claimed, false, id);
+      // Each command ran to its end before the next was started, and before Obsidian was ended
+      assert.equal(await readFile(join(vault, id + ".txt"), "utf8"), last, id);
+      assert.ok((one?.millis ?? 0) >= least, `${id} was waited for: ${String(one?.millis)} ms`);
+      assert.ok((one?.millis ?? 0) < least + 2500, `${id} was not waited for much longer than it took: ${String(one?.millis)} ms`);
+    }
+    console.log(`By their work: ${ways.map(([id], at) => `${id} ${String(result.commands[at]?.millis)} ms`).join(", ")}`);
+  });
+
+  it("says that such a command failed, when it throws at once or later with nothing to catch it", async () => {
+    const later = await go(await newVault("quiet-rejects"), { commands: ["runner-probe:quiet-rejects", "runner-probe:report"] });
+    assert.equal(later.ok, false);
+    assert.equal(later.commands.length, 1, "the command after it was not run");
+    assert.equal(later.commands[0]?.ended, "work");
+    assert.match(later.commands[0]?.error ?? "", /broke after it had started/);
+
+    const atOnce = await go(await newVault("quiet-throws"), { commands: ["runner-probe:quiet-throws"] });
+    assert.equal(atOnce.ok, false);
+    assert.match(atOnce.commands[0]?.error ?? "", /broke at once/);
+  });
+
+  it("is not held back by what a command leaves behind, and passes on what Obsidian shows", async () => {
+    const vault = await newVault("quiet-leaves");
+    said.length = 0;
+    const result = await go(vault, { commands: ["runner-probe:quiet-leaves"] });
+    assert.equal(result.ok, true);
+    assert.equal(result.commands[0]?.ended, "work");
+    assert.equal(await readFile(join(vault, "quiet-leaves.txt"), "utf8"), "done");
+    // Not the timer that repeats, not the one set for five minutes, not the notice of eight seconds, not the promise nothing keeps
+    assert.ok((result.commands[0]?.millis ?? 0) < 4000, `ended soon: ${String(result.commands[0]?.millis)} ms`);
+    assert.ok(said.includes("Notice: The probe leaves things behind."), said.join(" | "));
+  });
+
+  it("gives up a command that waits for somebody, and says what was left of its work", async () => {
+    const vault = await newVault("quiet-asks");
+    await assert.rejects(go(vault, { commands: ["runner-probe:quiet-asks"], timeout: 3 }), (error: unknown) => {
+      assert.ok(error instanceof RunError);
+      assert.equal(error.exit, EXIT.timeout);
+      assert.match(error.message, /took longer than 3 seconds\. Of its work there was left: \d+ promises?\./);
+      return true;
+    });
+    assert.equal(existsSync(join(vault, "quiet-asks.txt")), false);
   });
 
   it("says what is wrong with a command that is not there or does not apply", async () => {

@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { DEFAULTS, type Options } from "./args.ts";
-import { EXIT, fileState, isWritten, run, RunError, whenWritten, within, type Io } from "./run.ts";
+import { CALM, EXIT, fileState, isWritten, judgeWork, leftInWords, run, RunError, STALE, whenWritten, within, type Io, type Watch } from "./run.ts";
+import type { Work } from "./session.ts";
 
 const temp = (): Promise<string> => mkdtemp(join(tmpdir(), "ocr-test-"));
 const sleep = (millis: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, millis));
@@ -172,5 +173,67 @@ describe("run, up to the start of Obsidian", () => {
     } finally {
       await Promise.all([named, has, told].map((one) => rm(one.work, { recursive: true, force: true })));
     }
+  });
+});
+
+describe("judgeWork", () => {
+  const nothing: Work = { failed: null, moves: 7, going: 0, promise: 0, timer: 0, frame: 0, system: 0, said: false, started: [] };
+  const watching = (since: number, collected = 0): Watch => ({ moves: 7, since, collected });
+
+  it("says that a command has ended when nothing of its work is left, and has not been for a moment", () => {
+    assert.equal(judgeWork(nothing, watching(1000), 1000 + CALM - 1), "wait");
+    assert.equal(judgeWork(nothing, watching(1000), 1000 + CALM), "ended");
+  });
+
+  it("starts the moment anew when something of the work began or ended since the last look", () => {
+    const watch = watching(1000);
+    assert.equal(judgeWork({ ...nothing, moves: 8 }, watch, 5000), "wait");
+    assert.deepEqual(watch, { moves: 8, since: 5000, collected: 0 });
+    assert.equal(judgeWork({ ...nothing, moves: 8 }, watch, 5000 + CALM), "ended");
+  });
+
+  it("does not end a command while something is asked of the system, by whomever", () => {
+    const watch = watching(1000);
+    assert.equal(judgeWork({ ...nothing, going: 1 }, watch, 9000), "wait");
+    assert.equal(watch.since, 9000);
+  });
+
+  it("waits for what is left: a timer, a call before the next drawing, a request, a promise", () => {
+    for (const left of [{ timer: 1 }, { frame: 1 }, { system: 2 }, { promise: 1, timer: 1 }]) {
+      assert.equal(judgeWork({ ...nothing, ...left }, watching(1000), 60_000), "wait", JSON.stringify(left));
+    }
+  });
+
+  it("asks the browser to take away promises that nothing can keep, when nothing else is left, and not all the time", () => {
+    const promises = { ...nothing, promise: 3 };
+    assert.equal(judgeWork(promises, watching(1000), 1000 + STALE - 1), "wait");
+    const watch = watching(1000);
+    assert.equal(judgeWork(promises, watch, 1000 + STALE), "collect");
+    assert.equal(watch.collected, 1000 + STALE);
+    // Right after, the browser is given its time
+    assert.equal(judgeWork(promises, watch, 1000 + STALE + 50), "wait");
+    assert.equal(judgeWork(promises, watch, 1000 + STALE + 400), "collect");
+  });
+
+  it("says that a command failed when one of its promises failed with nothing to catch it, whatever is left", () => {
+    assert.equal(judgeWork({ ...nothing, failed: "It broke.", promise: 2, timer: 1 }, watching(1000), 1001), "failed");
+  });
+
+  it("takes the word of a command that says itself that it is done, after all", () => {
+    assert.equal(judgeWork({ ...nothing, said: true, promise: 2 }, watching(1000), 1001), "ended");
+  });
+});
+
+describe("leftInWords", () => {
+  const nothing: Work = { failed: null, moves: 0, going: 0, promise: 0, timer: 0, frame: 0, system: 0, said: false, started: [] };
+
+  it("names what is left, each kind with its number", () => {
+    assert.equal(leftInWords({ ...nothing, promise: 1 }), "1 promise");
+    assert.equal(leftInWords({ ...nothing, promise: 3, timer: 1, system: 2 }), "3 promises, 1 timer, 2 requests to the system");
+    assert.equal(leftInWords(nothing), "nothing that is followed");
+  });
+
+  it("says where it was started, for a run that asked to be told", () => {
+    assert.equal(leftInWords({ ...nothing, promise: 1, started: ["build (plugin:x:10)"] }), "1 promise. Started at: build (plugin:x:10)");
   });
 });
