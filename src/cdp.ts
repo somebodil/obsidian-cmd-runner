@@ -10,6 +10,9 @@
  */
 export class PageReloaded extends Error {}
 
+/** Thrown when something is asked of a page that is gone, or was not answered before it went: Obsidian was closed or has crashed */
+export class PageClosed extends Error {}
+
 export interface Page {
   /** Runs JavaScript in the page and gives back what it returns. A promise it returns is waited for. */
   evaluate<T>(expression: string): Promise<T>;
@@ -78,6 +81,11 @@ function open(address: string): Promise<Page> {
 
     const send = (method: string, params: Record<string, unknown> = {}): Promise<unknown> =>
       new Promise((done, fail) => {
+        // A socket that is closed takes what it is given and says nothing: the answer would be waited for without end
+        if (socket.readyState !== WebSocket.OPEN) {
+          fail(new PageClosed("Obsidian was closed."));
+          return;
+        }
         const id = next++;
         waiting.set(id, { resolve: done, reject: fail });
         socket.send(JSON.stringify({ id, method, params }));
@@ -109,7 +117,7 @@ function open(address: string): Promise<Page> {
     });
     socket.addEventListener("close", () => {
       for (const asked of waiting.values()) {
-        asked.reject(new Error("Obsidian was closed."));
+        asked.reject(new PageClosed("Obsidian was closed."));
       }
       waiting.clear();
       gone();

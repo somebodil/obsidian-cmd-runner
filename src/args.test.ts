@@ -20,6 +20,10 @@ describe("parseArgs", () => {
     assert.equal(options.timeout, 30);
   });
 
+  it("takes the longest time a timer can be set for", () => {
+    assert.equal(run(["--timeout", "2147483"]).timeout, 2_147_483);
+  });
+
   it("collects plugins and commands in the order given", () => {
     const options = run(["--plugin", "a/b@1.0.0", "--plugin=./local", "--command", "x:one", "--command", "x:two"]);
     assert.deepEqual(options.plugins, ["a/b@1.0.0", "./local"]);
@@ -53,6 +57,7 @@ describe("parseArgs", () => {
     assert.match(message(["--nope"]), /is not an option/);
     assert.match(message(["--arg", "novalue"]), /key=value/);
     assert.match(message(["--timeout", "soon"]), /number of seconds/);
+    assert.match(message(["--timeout", "2147484"]), /2147483 seconds \(about 24 days\) at most/);
     assert.match(message(["--wait", "maybe"]), /auto, none, or file/);
     assert.match(message(["--command", "a:b", "--eval", "x.js"]), /not both/);
     assert.match(message(["--args-file", "x.json"], () => [1, 2]), /has to hold an object/);

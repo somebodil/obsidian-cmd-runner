@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -101,6 +101,23 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     assert.equal(existsSync(join(vault, ".obsidian")), false);
   });
 
+  it("ends a run that is given up, before Obsidian is started and while a command runs, and still tidies up", async () => {
+    const isStopped = (error: unknown): boolean => error instanceof RunError && error.exit === EXIT.stopped;
+    const early = await newVault("stop-early");
+    await assert.rejects(run(options(early, { commands: ["runner-probe:report"] }), io, Promise.resolve()), isStopped);
+    assert.deepEqual((await readdir(early)).sort(), ["Home.md", "Other.md", "Sub"], "the command did not run, and nothing is left");
+
+    const vault = await newVault("stop");
+    let giveUp: () => void = () => undefined;
+    const stop = new Promise<void>((resolve) => {
+      giveUp = resolve;
+    });
+    // Given up at the moment the command says that it runs
+    const watching: Io = { ...io, say: (text) => (text === "hanging" ? giveUp() : io.say(text)) };
+    await assert.rejects(run(options(vault, { commands: ["runner-probe:hang"] }), watching, stop), isStopped);
+    assert.equal(existsSync(join(vault, ".obsidian")), false);
+  });
+
   it("does not wait for a command that knows nothing of the run, unless told what to wait for", async () => {
     const quick = await newVault("plain");
     const result = await go(quick, { commands: ["runner-probe:plain"] });
@@ -111,6 +128,11 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     const waited = await newVault("plain-file");
     await go(waited, { commands: ["runner-probe:plain"], wait: "file:probe-plain.txt" });
     assert.equal(await readFile(join(waited, "probe-plain.txt"), "utf8"), "written");
+
+    // In the next run the file is there from before: that does not count, and the run waits until it is written anew
+    const before = (await stat(join(waited, "probe-plain.txt"))).mtimeMs;
+    await go(waited, { commands: ["runner-probe:plain"], wait: "file:probe-plain.txt" });
+    assert.notEqual((await stat(join(waited, "probe-plain.txt"))).mtimeMs, before, "the run ended only after the command wrote its file again");
   });
 
   it("says what is wrong with a command that is not there or does not apply", async () => {

@@ -67,7 +67,7 @@ obsidian-cmd-runner install --obsidian-version 1.14.5   # only fetch Obsidian
 obsidian-cmd-runner resolve-version                     # print the version that would be used
 ```
 
-The program ends with 0 when every command was done, 1 when a command failed, 2 when what was asked cannot work, 3 when Obsidian could not be started or did not open the vault, and 124 when a command took too long.
+The program ends with 0 when every command was done, 1 when a command failed, 2 when what was asked cannot work, 3 when Obsidian could not be started or did not open the vault, 124 when a command took too long, and 130 when the run was stopped, as with Ctrl+C. A run that is stopped still puts the vault back, at whatever point it was.
 
 ## Which Obsidian
 
@@ -107,7 +107,7 @@ Do not run it on a vault that is open in your own Obsidian at the same time: two
 Obsidian starts a command and does not say when its work is over. So there are three ways:
 
 - **The command says so.** A command that knows of the runner tells it when it is done, and what came of it. This is what `auto` waits for, when the command takes part.
-- **A file appears.** `--wait file:out/report.json` waits until that file is in the vault.
+- **A file is written.** `--wait file:out/report.json` waits until that file is in the vault. A file that is there before the command starts, as from an earlier run, does not count: the run waits until it is written anew.
 - **Not at all.** `--wait none`, and `auto` for a command that does not take part: the command is started, and the run goes on.
 
 ### For authors of plugins

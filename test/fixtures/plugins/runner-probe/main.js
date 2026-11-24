@@ -37,7 +37,9 @@ module.exports = class RunnerProbe extends Plugin {
       id: "hang",
       name: "Hang",
       callback: () => {
-        window.obsidianCmdRunner?.claim();
+        const runner = window.obsidianCmdRunner;
+        runner?.claim();
+        runner?.log("hanging");
       },
     });
     // Knows nothing of the run: writes a file a little later

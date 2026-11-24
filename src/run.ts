@@ -2,10 +2,10 @@ import { existsSync, statSync } from "node:fs";
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Options } from "./args.ts";
-import { connect, PageReloaded, type Page } from "./cdp.ts";
+import { connect, PageClosed, PageReloaded, type Page } from "./cdp.ts";
 import { defaultCacheDir, installObsidian, programOfApp, resolveVersionKept, workDir } from "./install.ts";
 import { chooseScreen, freePort, makeScreen, start, startArgs, type Running } from "./launch.ts";
-import { parsePlugin, placePlugin, removePlaced, type Placed } from "./plugins.ts";
+import { parsePlugin, placePlugin, removePlaced, type Placed, type PluginSource } from "./plugins.ts";
 import type { Fetch } from "./releases.ts";
 import { offerRunner, runCode, startCommand, turnOn, whenDone, whenIndexed, whenReady, type Outcome } from "./session.ts";
 import { keepSettings, prepareProfile, restoreSettings, type Kept } from "./vault.ts";
@@ -14,7 +14,7 @@ import { keepSettings, prepareProfile, restoreSettings, type Kept } from "./vaul
 export const SITE_PLUGIN = { id: "vault-to-site", source: "somebodil/vault-to-site", command: "vault-to-site:build-again", config: "vault-to-site.json" };
 
 /** How a run can end. The number is what the program ends with. */
-export const EXIT = { ok: 0, failed: 1, usage: 2, obsidian: 3, timeout: 124 } as const;
+export const EXIT = { ok: 0, failed: 1, usage: 2, obsidian: 3, timeout: 124, stopped: 130 } as const;
 
 export class RunError extends Error {
   readonly exit: number;
@@ -58,15 +58,43 @@ export interface Io {
 
 const isFolder = (path: string): boolean => existsSync(path) && statSync(path).isDirectory();
 
-function within<T>(work: Promise<T>, millis: number, what: string, page: Page | null, running: Running): Promise<T> {
+/**
+ * Gives work a time to be done in, and gives it up when Obsidian is closed.
+ *
+ * @param exit what the run ends with when the time is over: a command that takes too long is not an Obsidian that does not start
+ */
+export function within<T>(work: Promise<T>, millis: number, what: string, page: Page | null, running: Pick<Running, "ended">, exit: number = EXIT.timeout): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new RunError(`${what} took longer than ${String(Math.round(millis / 1000))} seconds.`, EXIT.timeout)), millis);
+    timer = setTimeout(() => reject(new RunError(`${what} took longer than ${String(Math.round(millis / 1000))} seconds.`, exit)), millis);
   });
   const gone = (page?.closed ?? new Promise<never>(() => undefined)).then(() => {
     throw new RunError(`Obsidian was closed while ${what.charAt(0).toLowerCase() + what.slice(1)} ran. ${running.ended() ?? ""}`.trim(), EXIT.obsidian);
   });
   return Promise.race([work, late, gone]).finally(() => clearTimeout(timer));
+}
+
+/** What is noted of a file before a command, to see later that the command has written it. Null when the file is not there. */
+export type FileState = { mtime: number; size: number } | null;
+
+export const fileState = (path: string): Promise<FileState> =>
+  stat(path).then(
+    (found) => ({ mtime: found.mtimeMs, size: found.size }),
+    () => null,
+  );
+
+/** True when a file is there and is not the file that was there before: one that an earlier run has left does not count */
+export const isWritten = (before: FileState, now: FileState): boolean => now !== null && (before === null || now.mtime !== before.mtime || now.size !== before.size);
+
+/**
+ * Waits until a file is written. It is looked at ten times a second, and
+ * only as long as somebody waits: looking on after a command was given up
+ * would keep the program from ending.
+ */
+export async function whenWritten(file: string, before: FileState, waited: () => boolean): Promise<void> {
+  while (waited() && !isWritten(before, await fileState(file))) {
+    await new Promise((done) => setTimeout(done, 100));
+  }
 }
 
 /** The file in which a vault keeps the plugins it has turned on */
@@ -103,15 +131,12 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
 
   // What to run. Told nothing, a site is built.
   const commands = [...options.commands];
-  const specs = [...options.plugins];
   const args = { ...options.args };
   const configDir = ".obsidian";
   const pluginsDir = join(vault, configDir, "plugins");
-  if (commands.length === 0 && options.evalFile === null) {
+  const site = commands.length === 0 && options.evalFile === null;
+  if (site) {
     commands.push(SITE_PLUGIN.command);
-    if (specs.length === 0 && !isFolder(join(pluginsDir, SITE_PLUGIN.id))) {
-      specs.push(SITE_PLUGIN.source);
-    }
   }
   // The settings of a site go with its command, also when it is named among others: as after a command that makes a file the site is to hold
   const config = options.config !== null ? resolve(options.config) : join(vault, SITE_PLUGIN.config);
@@ -126,32 +151,14 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
   if (options.evalFile !== null && code === null) {
     throw new RunError(`"${options.evalFile}" could not be read.`, EXIT.usage);
   }
-  const sources = specs.map((spec) => {
+  const sourceOf = (spec: string): PluginSource => {
     try {
       return parsePlugin(spec, isFolder);
     } catch (error) {
       throw new RunError(error instanceof Error ? error.message : String(error), EXIT.usage);
     }
-  });
-
-  // The program of Obsidian
-  let program: string;
-  if (options.obsidianApp !== null) {
-    program = programOfApp(resolve(options.obsidianApp));
-    if (!existsSync(program)) {
-      throw new RunError(`There is no Obsidian at "${options.obsidianApp}".`, EXIT.usage);
-    }
-  } else {
-    const cache = options.cacheDir ?? defaultCacheDir(io.env);
-    const version = await lap("resolve", () => resolveVersionKept(options.obsidianVersion, cache, io.fetch as unknown as Fetch)).catch((error: unknown) => {
-      throw new RunError(error instanceof Error ? error.message : String(error), EXIT.usage);
-    });
-    const installed = await lap("fetch", () => installObsidian(version, cache, io.fetch, io.say)).catch((error: unknown) => {
-      throw new RunError(error instanceof Error ? error.message : String(error), EXIT.obsidian);
-    });
-    program = installed.program;
-    io.say(`Obsidian ${version}${installed.fromCache ? " (kept from before)" : ""}`);
-  }
+  };
+  const sources = options.plugins.map(sourceOf);
 
   let kept: Kept | null = null;
   const placed: Placed[] = [];
@@ -159,29 +166,61 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
   let running: Running | null = null;
   let made: { display: string; stop(): void } | null = null;
   let page: Page | null = null;
+  // A run that is given up: what is being fetched is let go, and Obsidian is ended when it runs. All that
+  // follows is inside `try`, so that the run ends as a stopped one whatever it was doing.
   let stopped = false;
+  const givenUp = (): RunError => new RunError("The run was stopped.", EXIT.stopped);
+  const fetching = new AbortController();
   void stop.then(() => {
     stopped = true;
+    fetching.abort();
     page?.close();
     void running?.stop();
   });
+  const fetcher: typeof fetch = (from, init) => io.fetch(from, { ...init, signal: fetching.signal });
 
   try {
+    // The program of Obsidian
+    let program: string;
+    if (options.obsidianApp !== null) {
+      program = programOfApp(resolve(options.obsidianApp));
+      if (!existsSync(program)) {
+        throw new RunError(`There is no Obsidian at "${options.obsidianApp}".`, EXIT.usage);
+      }
+    } else {
+      const cache = options.cacheDir ?? defaultCacheDir(io.env);
+      const version = await lap("resolve", () => resolveVersionKept(options.obsidianVersion, cache, fetcher as unknown as Fetch)).catch((error: unknown) => {
+        throw new RunError(error instanceof Error ? error.message : String(error), EXIT.usage);
+      });
+      const installed = await lap("fetch", () => installObsidian(version, cache, fetcher, io.say)).catch((error: unknown) => {
+        throw new RunError(error instanceof Error ? error.message : String(error), EXIT.obsidian);
+      });
+      program = installed.program;
+      io.say(`Obsidian ${version}${installed.fromCache ? " (kept from before)" : ""}`);
+    }
+
     kept = await keepSettings(vault, configDir);
     if (!options.vaultPlugins && kept.files.has(ENABLED_PLUGINS)) {
       // Obsidian turns on what this list names. Emptied for the run, and put back after it.
       await writeFile(join(kept.folder, ENABLED_PLUGINS), "[]");
     }
     const token = options.githubToken ?? io.env.GITHUB_TOKEN ?? io.env.GH_TOKEN ?? null;
+    const place = async (source: PluginSource): Promise<void> => {
+      const one = await placePlugin(source, pluginsDir, process.cwd(), fetcher, token === "" ? null : token).catch((error: unknown) => {
+        throw new RunError(error instanceof Error ? error.message : String(error), EXIT.usage);
+      });
+      placed.push(one);
+      if (!one.placed) {
+        io.say(`The vault has the plugin ${one.id} already: that one is used.`);
+      }
+    };
     await lap("plugins", async () => {
       for (const source of sources) {
-        const one = await placePlugin(source, pluginsDir, process.cwd(), io.fetch, token === "" ? null : token).catch((error: unknown) => {
-          throw new RunError(error instanceof Error ? error.message : String(error), EXIT.usage);
-        });
-        placed.push(one);
-        if (!one.placed) {
-          io.say(`The vault has the plugin ${one.id} already: that one is used.`);
-        }
+        await place(source);
+      }
+      // The plugin that builds the site is fetched when nothing has brought it: not the vault, and not a plugin that was named
+      if (site && !isFolder(join(pluginsDir, SITE_PLUGIN.id))) {
+        await place(sourceOf(SITE_PLUGIN.source));
       }
     });
 
@@ -193,6 +232,10 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       made = await lap("start", () => makeScreen()).catch((error: unknown) => {
         throw new RunError(error instanceof Error ? error.message : String(error), EXIT.obsidian);
       });
+    }
+    // Given up before this point, there is no Obsidian to end: it is not started
+    if (stopped) {
+      throw givenUp();
     }
     running = start(program, startArgs(profile, port, screen), made === null ? io.env : { ...io.env, DISPLAY: made.display });
     const live = running;
@@ -215,9 +258,9 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     const prepare = async (): Promise<{ ready: Awaited<ReturnType<typeof whenReady>>; turned: Awaited<ReturnType<typeof turnOn>> }> => {
       for (let attempt = 1; ; attempt++) {
         try {
-          const ready = await lap("open", () => within(whenReady(open), START_LIMIT, "Opening the vault", open, live));
-          const turned = await lap("plugins", () => within(turnOn(open, wanted), START_LIMIT, "Turning the plugins on", open, live));
-          await lap("index", () => within(whenIndexed(open), START_LIMIT, "Reading the notes", open, live));
+          const ready = await lap("open", () => within(whenReady(open), START_LIMIT, "Opening the vault", open, live, EXIT.obsidian));
+          const turned = await lap("plugins", () => within(turnOn(open, wanted), START_LIMIT, "Turning the plugins on", open, live, EXIT.obsidian));
+          await lap("index", () => within(whenIndexed(open), START_LIMIT, "Reading the notes", open, live, EXIT.obsidian));
           return { ready, turned };
         } catch (error) {
           if (!(error instanceof PageReloaded) || attempt === 5) {
@@ -239,13 +282,16 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     };
     if (code !== null) {
       const from = clock();
-      await offerRunner(open, args);
-      record("eval", true, await lap("commands", () => within(runCode(open, code), limit, "The code", open, live)), from);
+      record("eval", true, await lap("commands", () => within(offerRunner(open, args).then(() => runCode(open, code)), limit, "The code", open, live)), from);
     }
+    // The file that says a command is done, when one was named
+    const file = options.wait.startsWith("file:") ? resolve(vault, options.wait.slice(5)) : null;
     for (const id of commands) {
       const from = clock();
-      await offerRunner(open, args);
-      const started = await startCommand(open, id);
+      // As the file is before the command: it may be there from an earlier run
+      const before = file === null ? null : await fileState(file);
+      // Starting is part of the time a command may take: a command can do all its work before it gives the page back
+      const started = await lap("commands", () => within(offerRunner(open, args).then(() => startCommand(open, id)), limit, `The command "${id}"`, open, live));
       if (!started.found) {
         const hint = started.similar.length > 0 ? ` The plugin has: ${started.similar.join(", ")}.` : " Is its plugin in the vault? Name it with --plugin.";
         record(id, false, { ok: false, result: null, error: `Obsidian has no command "${id}".${hint}` }, from);
@@ -256,15 +302,12 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
         break;
       }
       let outcome: Outcome = { ok: true, result: null, error: null };
-      if (options.wait.startsWith("file:")) {
-        const file = resolve(vault, options.wait.slice(5));
-        const appear = (async (): Promise<Outcome> => {
-          while (!(await stat(file).then(() => true, () => false))) {
-            await new Promise((done) => setTimeout(done, 100));
-          }
-          return { ok: true, result: null, error: null };
-        })();
-        outcome = await lap("commands", () => within(appear, limit, `The command "${id}"`, open, live));
+      if (file !== null) {
+        let waiting = true;
+        const written = whenWritten(file, before, () => waiting).then((): Outcome => ({ ok: true, result: null, error: null }));
+        outcome = await lap("commands", () => within(written, limit, `The command "${id}"`, open, live)).finally(() => {
+          waiting = false;
+        });
       } else if (options.wait === "auto" && started.claimed) {
         outcome = await lap("commands", () => within(whenDone(open), limit, `The command "${id}"`, open, live));
       }
@@ -275,10 +318,13 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     return { ok: results.every((one) => one.ok), obsidian: ready.obsidian, vault: ready.vault, plugins: turned.on, commands: results, timings };
   } catch (error) {
     if (stopped) {
-      throw new RunError("The run was stopped.", 130);
+      throw givenUp();
     }
     if (error instanceof PageReloaded) {
       throw new RunError("Obsidian loaded its page anew while a command ran, so what came of the command is not known.", EXIT.obsidian);
+    }
+    if (error instanceof PageClosed) {
+      throw new RunError(`Obsidian was closed before the run was over. ${running?.ended() ?? ""}`.trim(), EXIT.obsidian);
     }
     throw error;
   } finally {

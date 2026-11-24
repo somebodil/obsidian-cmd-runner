@@ -70,6 +70,25 @@ describe("placePlugin", () => {
     }
   });
 
+  it("asks for the files of a release at the same time", async () => {
+    const work = await mkdtemp(join(tmpdir(), "ocr-test-"));
+    try {
+      const files: Record<string, string> = { "manifest.json": JSON.stringify({ id: "from-web" }), "main.js": "x", "styles.css": "a{}" };
+      let open = 0;
+      let most = 0;
+      const slow = (async (url: string) => {
+        most = Math.max(most, ++open);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        open--;
+        return new Response(files[String(url).split("/").pop() ?? ""], { status: 200 });
+      }) as unknown as typeof fetch;
+      await placePlugin({ kind: "release", owner: "o", repo: "r", tag: null }, join(work, "plugins"), work, slow, null);
+      assert.equal(most, 3);
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
   it("uses the plugin the vault has already, and does not take that one away", async () => {
     const work = await mkdtemp(join(tmpdir(), "ocr-test-"));
     try {

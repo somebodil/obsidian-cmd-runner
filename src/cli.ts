@@ -60,8 +60,9 @@ export async function main(argv: readonly string[]): Promise<number> {
     giveUp = resolve;
   });
   const onSignal = (): void => giveUp();
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  // Heard until the run is over, and not once: a second Ctrl+C would otherwise end the program while the vault is being put back
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
   try {
     const result = await run(options, io, stop);
     if (options.json) {

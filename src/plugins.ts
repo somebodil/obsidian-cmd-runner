@@ -58,13 +58,19 @@ async function fetchRelease(source: { owner: string; repo: string; tag: string |
   const name = `${source.owner}/${source.repo}${source.tag === null ? "" : "@" + source.tag}`;
   const files = new Map<string, Buffer>();
   if (token === null) {
-    for (const file of FILES) {
-      const reply = await fetcher(releaseFileUrl(source, file), { redirect: "follow" });
-      if (reply.ok) {
-        files.set(file, Buffer.from(await reply.arrayBuffer()));
+    // Asked for at the same time: one after the other, a run would wait three times as long for them
+    const replies = await Promise.all(
+      FILES.map(async (file) => {
+        const reply = await fetcher(releaseFileUrl(source, file), { redirect: "follow" });
+        return { file, status: reply.status, content: reply.ok ? Buffer.from(await reply.arrayBuffer()) : null };
+      }),
+    );
+    for (const { file, status, content } of replies) {
+      if (content !== null) {
+        files.set(file, content);
       } else if (file !== "styles.css") {
         throw new Error(
-          `The plugin ${name} has no ${file} in its release (GitHub answered ${String(reply.status)}). ` +
+          `The plugin ${name} has no ${file} in its release (GitHub answered ${String(status)}). ` +
             "For a repository that is not public, give a token with --github-token or GITHUB_TOKEN.",
         );
       }

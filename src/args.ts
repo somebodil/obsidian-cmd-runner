@@ -94,6 +94,9 @@ Options
   --help, --version
 `;
 
+/** The most seconds a command may be given. A timer of Node.js that is set for longer goes off at once. */
+export const LONGEST_TIMEOUT = 2_147_483;
+
 /** A value given as `key=value`: read as JSON when it is JSON, else kept as text */
 function valueOf(text: string): unknown {
   try {
@@ -198,6 +201,9 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
           const seconds = Number(need());
           if (!Number.isFinite(seconds) || seconds <= 0) {
             throw new Error("--timeout is a number of seconds above zero.");
+          }
+          if (seconds > LONGEST_TIMEOUT) {
+            throw new Error(`--timeout can be ${String(LONGEST_TIMEOUT)} seconds (about 24 days) at most.`);
           }
           options.timeout = seconds;
           break;
