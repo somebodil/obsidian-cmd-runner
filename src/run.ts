@@ -112,13 +112,14 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     if (specs.length === 0 && !isFolder(join(pluginsDir, SITE_PLUGIN.id))) {
       specs.push(SITE_PLUGIN.source);
     }
-    const config = options.config !== null ? resolve(options.config) : join(vault, SITE_PLUGIN.config);
-    if (options.config !== null || existsSync(config)) {
-      try {
-        args.settings = JSON.parse(await readFile(config, "utf8")) as unknown;
-      } catch (error) {
-        throw new RunError(`"${config}" could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`, EXIT.usage);
-      }
+  }
+  // The settings of a site go with its command, also when it is named among others: as after a command that makes a file the site is to hold
+  const config = options.config !== null ? resolve(options.config) : join(vault, SITE_PLUGIN.config);
+  if (args.settings === undefined && (options.config !== null || (commands.includes(SITE_PLUGIN.command) && existsSync(config)))) {
+    try {
+      args.settings = JSON.parse(await readFile(config, "utf8")) as unknown;
+    } catch (error) {
+      throw new RunError(`"${config}" could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`, EXIT.usage);
     }
   }
   const code = options.evalFile === null ? null : await readFile(resolve(options.evalFile), "utf8").catch(() => null);

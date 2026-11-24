@@ -49,7 +49,7 @@ obsidian-cmd-runner --vault notes --plugin owner/repo --command plugin-id:comman
 | `--eval <file.js>` | Run a file of JavaScript inside Obsidian. What it returns is the result. |
 | `--arg <key=value>` | What the command is given. A value that is JSON is read as JSON. May be given again. |
 | `--args-file <file.json>` | The same, from a file. |
-| `--config <file.json>` | Settings for vault-to-site. To begin with, `vault-to-site.json` in the vault. |
+| `--config <file.json>` | Settings for vault-to-site. To begin with, `vault-to-site.json` in the vault, whenever its command is among those that run. |
 | `--wait <auto\|none\|file:PATH>` | When a command counts as done. See below. |
 | `--timeout <seconds>` | How long a command may take. To begin with, 600. |
 | `--no-vault-plugins` | Leave the plugins the vault has turned on off. |
