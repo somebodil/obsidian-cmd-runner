@@ -8,7 +8,7 @@ obsidian-cmd-runner drives Obsidian in ways Obsidian does not promise to keep. S
 
 | | Oldest that is tried | Also tried | Newest |
 | --- | --- | --- | --- |
-| Linux, x64 (a build server of GitHub) | 1.8.10 | | the latest, every week |
+| Linux, x64 (a build server of GitHub) | 1.6.7 | 1.8.10 | the latest, every week |
 | Linux, arm64 | 1.6.7 | 1.7.7, 1.8.10, 1.11.7 | 1.15.1 |
 | macOS | 1.5.12 | 1.13.7 | 1.15.1 |
 
