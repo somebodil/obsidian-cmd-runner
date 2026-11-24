@@ -409,6 +409,41 @@ export async function startCommand(page: Page, id: string): Promise<Started> {
   })()`);
 }
 
+/** A command Obsidian knows, as the list of commands tells of it */
+export interface Listed {
+  /** What is given to `--command` */
+  id: string;
+  /** As Obsidian shows it in its list of commands */
+  name: string;
+  /** The id of the plugin it is of, or null for a command of Obsidian itself */
+  plugin: string | null;
+  /** True for a command that works on the note that is open: with no note open it does not apply */
+  needsNote: boolean;
+  /** False for a command that says that it does not apply now, as one that needs a note to be open */
+  applies: boolean;
+}
+
+/**
+ * JavaScript that gives back the commands Obsidian knows: for `--eval`, as
+ * the list is asked for.
+ *
+ * @param all false for the commands of the plugins only, not those of Obsidian itself
+ */
+export function listCode(all: boolean): string {
+  return `
+    const plugins = Object.keys(app.plugins.plugins);
+    const listed = Object.values(app.commands.commands).map((command) => {
+      const owner = command.id.includes(":") ? command.id.slice(0, command.id.indexOf(":")) : "";
+      let applies = true;
+      // Asked as Obsidian asks before it shows a command: nothing is run by it
+      try { applies = typeof command.checkCallback !== "function" || command.checkCallback(true) !== false; } catch (error) { applies = false; }
+      const needsNote = typeof command.editorCallback === "function" || typeof command.editorCheckCallback === "function";
+      return { id: command.id, name: String(command.name || ""), plugin: plugins.includes(owner) ? owner : null, needsNote, applies: applies && !needsNote };
+    });
+    return listed.filter((one) => ${String(all)} || one.plugin !== null).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  `;
+}
+
 /** What is left of the work of the command that runs. Null where the work cannot be followed. */
 export async function workLeft(page: Page): Promise<Work | null> {
   return page.evaluate<Work | null>(`(() => { const { work, state } = window.__obsidianCmdRunner; return work ? { ...work.left(), said: state.finished } : null; })()`);

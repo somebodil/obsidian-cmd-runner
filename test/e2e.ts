@@ -14,6 +14,7 @@ import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEFAULTS, type Options } from "../src/args.ts";
 import { EXIT, run, RunError, type Io, type RunResult } from "../src/run.ts";
+import { listCode, type Listed } from "../src/session.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const probe = join(here, "fixtures", "plugins", "runner-probe");
@@ -226,6 +227,21 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     const thrown = await go(vault, { plugins: [], evalFile: code });
     assert.equal(thrown.ok, false);
     assert.match(thrown.commands[0]?.error ?? "", /no good/);
+  });
+
+  it("lists the commands that can be run, with what stands against running one now", async () => {
+    const vault = await newVault("list");
+    const result = await go(vault, { evalCode: listCode(false) });
+    const listed = result.commands[0]?.result as Listed[];
+    const probes = listed.filter((one) => one.plugin === "runner-probe");
+    assert.ok(probes.length >= 5, JSON.stringify(listed));
+    assert.equal(listed.length, probes.length, "only the commands of plugins, when not asked for all");
+    assert.deepEqual(probes.find((one) => one.id === "runner-probe:report"), { id: "runner-probe:report", name: "Runner probe: Report", plugin: "runner-probe", needsNote: false, applies: true });
+    assert.equal(probes.find((one) => one.id === "runner-probe:never")?.applies, false);
+    // Asked for all, the commands of Obsidian itself are there as well
+    const all = (await go(vault, { evalCode: listCode(true) })).commands[0]?.result as Listed[];
+    assert.ok(all.some((one) => one.plugin === null && one.id.startsWith("app:")), "the commands of Obsidian itself");
+    assert.ok(all.length > listed.length);
   });
 
   it("leaves what it brought when asked to", async () => {

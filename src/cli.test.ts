@@ -5,6 +5,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { listInWords } from "./cli.ts";
 import { EXIT } from "./run.ts";
 
 const sleep = (millis: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, millis));
@@ -50,5 +51,37 @@ describe("main", () => {
     } finally {
       await rm(work, { recursive: true, force: true });
     }
+  });
+});
+
+describe("listInWords", () => {
+  it("lists the commands by plugin, each with the id that --command takes", () => {
+    const text = listInWords([
+      { id: "site:build-again", name: "Site: Build again", plugin: "site", needsNote: false, applies: true },
+      { id: "app:reload", name: "Reload app without saving", plugin: null, needsNote: false, applies: true },
+      { id: "site:build", name: "Site: Build", plugin: "site", needsNote: false, applies: true },
+      { id: "lint:lint-file", name: "Lint: Lint the current file", plugin: "lint", needsNote: true, applies: false },
+      { id: "lint:undo", name: "Lint: Undo", plugin: "lint", needsNote: false, applies: false },
+    ]);
+    assert.equal(
+      text,
+      [
+        "Obsidian itself",
+        "  app:reload        Reload app without saving",
+        "",
+        "lint",
+        "  lint:lint-file    Lint: Lint the current file  (works on the note that is open)",
+        "  lint:undo         Lint: Undo  (does not apply now)",
+        "",
+        "site",
+        "  site:build        Site: Build",
+        "  site:build-again  Site: Build again",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("says what to do when there is nothing to list", () => {
+    assert.match(listInWords([]), /Name one with --plugin/);
   });
 });

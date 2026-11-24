@@ -69,3 +69,20 @@ describe("parseArgs", () => {
     );
   });
 });
+
+describe("commands", () => {
+  it("is the list of what can be run, with the options of a run", () => {
+    const parsed = parseArgs(["commands", "--vault", "notes", "--plugin", "owner/repo"]);
+    assert.equal(parsed.kind, "commands");
+    assert.deepEqual(parsed.kind === "commands" ? [parsed.options.vault, parsed.options.plugins, parsed.all] : null, ["notes", ["owner/repo"], false]);
+    const all = parseArgs(["commands", "--all"]);
+    assert.equal(all.kind === "commands" && all.all, true);
+  });
+
+  it("runs nothing, and --all goes with it only", () => {
+    const ran = parseArgs(["commands", "--command", "x:y"]);
+    assert.equal(ran.kind === "error" ? ran.message : "", "commands lists what can be run, and runs nothing: leave --command and --eval out.");
+    const all = parseArgs(["--all"]);
+    assert.match(all.kind === "error" ? all.message : "", /--all goes with commands/);
+  });
+});

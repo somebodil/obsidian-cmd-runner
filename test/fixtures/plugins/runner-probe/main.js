@@ -47,12 +47,13 @@ module.exports = class RunnerProbe extends Plugin {
         runner?.log("hanging");
       },
     });
-    // Knows nothing of the run: writes a file a little later
+    // Knows nothing of the run: writes a file a little later. Later than Obsidian takes to end on a busy
+    // computer, so that a run that does not wait is seen to have ended before the file was written.
     this.addCommand({
       id: "plain",
       name: "Plain",
       callback: () => {
-        setTimeout(() => void this.app.vault.adapter.write("probe-plain.txt", "written"), 400);
+        setTimeout(() => void this.app.vault.adapter.write("probe-plain.txt", "written"), 1500);
       },
     });
     // Says that it does not apply

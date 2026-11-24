@@ -13,6 +13,8 @@ export interface Options {
   commands: string[];
   /** A file of JavaScript that is run inside Obsidian */
   evalFile: string | null;
+  /** JavaScript that is run inside Obsidian, as text: for what the program asks of Obsidian itself, as the list of its commands */
+  evalCode: string | null;
   /** What a command is given: `window.obsidianCmdRunner.args` */
   args: Record<string, unknown>;
   /** A file of settings for the plugin that builds a site, when no command is named */
@@ -40,6 +42,8 @@ export interface Options {
 
 export type Parsed =
   | { kind: "run"; options: Options }
+  /** `all`: also the commands of Obsidian itself, not only those of plugins */
+  | { kind: "commands"; options: Options; all: boolean }
   | { kind: "resolve-version"; version: string }
   | { kind: "install"; options: Options }
   | { kind: "help" }
@@ -53,6 +57,7 @@ export const DEFAULTS: Options = {
   plugins: [],
   commands: [],
   evalFile: null,
+  evalCode: null,
   args: {},
   config: null,
   wait: "auto",
@@ -70,6 +75,9 @@ export const HELP = `obsidian-cmd-runner: runs a command of an Obsidian plugin w
 
 Usage
   obsidian-cmd-runner [options]                 run commands in a vault
+  obsidian-cmd-runner commands [options]        list the commands that can be run: the ids
+                                                of the plugins in the vault and of --plugin;
+                                                with --all, those of Obsidian itself as well
   obsidian-cmd-runner install [options]         only fetch Obsidian
   obsidian-cmd-runner resolve-version [version] print the version that would be used
 
@@ -119,12 +127,13 @@ function valueOf(text: string): unknown {
 export function parseArgs(argv: readonly string[], readJson: (path: string) => unknown = () => ({})): Parsed {
   const options: Options = { ...DEFAULTS, plugins: [], commands: [], args: {} };
   const rest = [...argv];
-  let kind: "run" | "install" = "run";
+  let kind: "run" | "install" | "commands" = "run";
+  let all = false;
   if (rest[0] === "resolve-version") {
     return { kind: "resolve-version", version: rest[1] ?? "latest" };
   }
-  if (rest[0] === "install") {
-    kind = "install";
+  if (rest[0] === "install" || rest[0] === "commands") {
+    kind = rest[0];
     rest.shift();
   } else if (rest[0] === "run") {
     rest.shift();
@@ -234,6 +243,12 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
         case "--show":
           options.show = true;
           break;
+        case "--all":
+          if (kind !== "commands") {
+            throw new Error("--all goes with commands: obsidian-cmd-runner commands --all.");
+          }
+          all = true;
+          break;
         default:
           throw new Error(`"${flag}" is not an option. See --help.`);
       }
@@ -243,6 +258,12 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
   }
   if (options.evalFile !== null && options.commands.length > 0) {
     return { kind: "error", message: "Give --command or --eval, not both." };
+  }
+  if (kind === "commands") {
+    if (options.commands.length > 0 || options.evalFile !== null) {
+      return { kind: "error", message: "commands lists what can be run, and runs nothing: leave --command and --eval out." };
+    }
+    return { kind, options, all };
   }
   return { kind, options };
 }

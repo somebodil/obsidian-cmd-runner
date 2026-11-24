@@ -3,6 +3,24 @@
   "version": "0.1.0",
   "description": "Runs a command of an Obsidian plugin without the window of Obsidian: on a server, or from a script",
   "license": "MIT",
+  "author": "somebodil",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/somebodil/obsidian-cmd-runner.git"
+  },
+  "homepage": "https://github.com/somebodil/obsidian-cmd-runner#readme",
+  "bugs": {
+    "url": "https://github.com/somebodil/obsidian-cmd-runner/issues"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "cli",
+    "headless",
+    "ci",
+    "github-actions",
+    "automation"
+  ],
   "type": "module",
   "bin": {
     "obsidian-cmd-runner": "bin/obsidian-cmd-runner.js"
@@ -26,7 +44,7 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "check": "npm run typecheck && npm test",
     "build": "tsc -p tsconfig.build.json",
-    "prepack": "npm run build",
+    "prepare": "npm run build",
     "e2e": "node test/e2e.ts"
   },
   "devDependencies": {

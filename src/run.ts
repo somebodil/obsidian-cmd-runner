@@ -237,7 +237,7 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
   const args = { ...options.args };
   const configDir = ".obsidian";
   const pluginsDir = join(vault, configDir, "plugins");
-  const site = commands.length === 0 && options.evalFile === null;
+  const site = commands.length === 0 && options.evalFile === null && options.evalCode === null;
   if (site) {
     commands.push(SITE_PLUGIN.command);
   }
@@ -250,7 +250,7 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       throw new RunError(`"${config}" could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`, EXIT.usage);
     }
   }
-  const code = options.evalFile === null ? null : await readFile(resolve(options.evalFile), "utf8").catch(() => null);
+  const code = options.evalCode ?? (options.evalFile === null ? null : await readFile(resolve(options.evalFile), "utf8").catch(() => null));
   if (options.evalFile !== null && code === null) {
     throw new RunError(`"${options.evalFile}" could not be read.`, EXIT.usage);
   }

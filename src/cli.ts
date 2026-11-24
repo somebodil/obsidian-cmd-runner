@@ -3,6 +3,7 @@ import { HELP, parseArgs } from "./args.ts";
 import { defaultCacheDir, installObsidian } from "./install.ts";
 import { resolveVersion, type Fetch } from "./releases.ts";
 import { EXIT, run, RunError, type Io } from "./run.ts";
+import { listCode, type Listed } from "./session.ts";
 
 const VERSION = "0.1.0";
 
@@ -40,11 +41,13 @@ export async function main(argv: readonly string[]): Promise<number> {
         say(error instanceof Error ? error.message : String(error));
         return EXIT.obsidian;
       }
+    case "commands":
     case "run":
       break;
   }
 
-  const { options } = parsed;
+  // The list of commands is asked of Obsidian in a run like any other: the plugins are put in and turned on first
+  const options = parsed.kind === "commands" ? { ...parsed.options, evalCode: listCode(parsed.all) } : parsed.options;
   const io: Io = {
     say,
     fetch,
@@ -65,6 +68,11 @@ export async function main(argv: readonly string[]): Promise<number> {
   process.on("SIGTERM", onSignal);
   try {
     const result = await run(options, io, stop);
+    if (parsed.kind === "commands" && result.ok) {
+      const listed = (result.commands[0]?.result ?? []) as Listed[];
+      process.stdout.write(options.json ? JSON.stringify(listed, null, 2) + "\n" : listInWords(listed));
+      return EXIT.ok;
+    }
     if (options.json) {
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     } else {
@@ -86,4 +94,26 @@ export async function main(argv: readonly string[]): Promise<number> {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
   }
+}
+
+/**
+ * The commands that can be run, for a person to read: by plugin, each with
+ * its id, which is what `--command` takes, and its name in Obsidian.
+ */
+export function listInWords(listed: readonly Listed[]): string {
+  if (listed.length === 0) {
+    return "No plugin with a command is on in this vault. Name one with --plugin, or list the commands of Obsidian itself with --all.\n";
+  }
+  const widest = Math.max(...listed.map((one) => one.id.length));
+  const lines: string[] = [];
+  let group: string | null | undefined;
+  for (const one of [...listed].sort((a, b) => (a.plugin ?? "").localeCompare(b.plugin ?? "") || a.id.localeCompare(b.id))) {
+    if (one.plugin !== group) {
+      group = one.plugin;
+      lines.push(...(lines.length > 0 ? [""] : []), one.plugin ?? "Obsidian itself");
+    }
+    const note = one.needsNote ? "  (works on the note that is open)" : one.applies ? "" : "  (does not apply now)";
+    lines.push(`  ${one.id.padEnd(widest)}  ${one.name}${note}`);
+  }
+  return lines.join("\n") + "\n";
 }
