@@ -1,5 +1,7 @@
 // A plugin for the tests of obsidian-cmd-runner: commands that end in each way a command can.
-const { Notice, Plugin } = require("obsidian");
+const { Modal, Notice, Plugin } = require("obsidian");
+const timers = require("timers");
+const zlib = require("zlib");
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
@@ -152,12 +154,38 @@ module.exports = class RunnerProbe extends Plugin {
       name: "Quiet: leaves",
       callback: async () => {
         this.registerInterval(window.setInterval(() => void sleep(1), 50));
+        // The same of Node.js, as a server keeps one, and a stream that packs data and is never closed
+        const kept = timers.setInterval(() => undefined, 200);
+        this.register(() => timers.clearInterval(kept));
+        this.packer = zlib.createDeflate();
+        this.packer.write("kept open");
         setTimeout(() => undefined, 5 * 60 * 1000);
         // A promise that is never kept, and that nothing holds
         void new Promise(() => undefined).then(() => write("quiet-leaves.txt", "never"));
         new Notice("The probe leaves things behind.", 8000);
         await sleep(200);
         await write("quiet-leaves.txt", "done");
+      },
+    });
+    // Opens a window that asks something, and is done as far as its work goes
+    this.addCommand({
+      id: "quiet-window",
+      name: "Quiet: window",
+      callback: () => {
+        const modal = new Modal(this.app);
+        modal.titleEl.setText("Are you sure?");
+        modal.contentEl.setText("This cannot be undone.");
+        modal.open();
+      },
+    });
+    // Says nothing when it is asked whether it applies, as a command that does not
+    this.addCommand({ id: "silent", name: "Silent", checkCallback: () => undefined });
+    // Writes down the settings it was given
+    this.addCommand({
+      id: "settings",
+      name: "Settings",
+      callback: async () => {
+        await write("probe-settings.json", JSON.stringify(await this.loadData()));
       },
     });
     // Waits for a click that nobody is there to make

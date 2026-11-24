@@ -59,7 +59,6 @@ describe("parseArgs", () => {
     assert.match(message(["--timeout", "soon"]), /number of seconds/);
     assert.match(message(["--timeout", "2147484"]), /2147483 seconds \(about 24 days\) at most/);
     assert.match(message(["--wait", "maybe"]), /auto, none, or file/);
-    assert.match(message(["--command", "a:b", "--eval", "x.js"]), /not both/);
     assert.match(message(["--args-file", "x.json"], () => [1, 2]), /has to hold an object/);
     assert.match(
       message(["--args-file", "x.json"], () => {
@@ -84,5 +83,20 @@ describe("commands", () => {
     assert.equal(ran.kind === "error" ? ran.message : "", "commands lists what can be run, and runs nothing: leave --command and --eval out.");
     const all = parseArgs(["--all"]);
     assert.match(all.kind === "error" ? all.message : "", /--all goes with commands/);
+  });
+});
+
+describe("--settings and --eval", () => {
+  it("takes the settings of a plugin as its id and a file", () => {
+    assert.deepEqual(run(["--settings", "linter=cfg/linter.json", "--settings=other=b.json"]).settings, { linter: "cfg/linter.json", other: "b.json" });
+    for (const wrong of ["linter", "=file.json", "linter="]) {
+      const parsed = parseArgs(["--settings", wrong]);
+      assert.match(parsed.kind === "error" ? parsed.message : "", /plugin-id=file\.json/, wrong);
+    }
+  });
+
+  it("takes a file of code together with commands: the code runs first", () => {
+    const options = run(["--eval", "open.js", "--command", "x:y"]);
+    assert.deepEqual([options.evalFile, options.commands], ["open.js", ["x:y"]]);
   });
 });

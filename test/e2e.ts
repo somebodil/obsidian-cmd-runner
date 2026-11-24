@@ -202,12 +202,57 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     assert.equal(existsSync(join(vault, "quiet-asks.txt")), false);
   });
 
+  it("says that a command was not done when it opens a window and leaves it open", async () => {
+    const result = await go(await newVault("quiet-window"), { commands: ["runner-probe:quiet-window", "runner-probe:report"] });
+    assert.equal(result.ok, false);
+    assert.equal(result.commands.length, 1, "the command after it was not run");
+    assert.match(result.commands[0]?.error ?? "", /opened a window and left it open \("Are you sure\?"\)/);
+  });
+
+  it("gives a plugin its settings for the run, and puts the settings of the vault's own plugin back", async () => {
+    // A plugin that is brought for the run
+    const brought = await newVault("settings-brought");
+    const given = join(work, "given.json");
+    await writeFile(given, JSON.stringify({ greeting: "hello" }));
+    assert.equal((await go(brought, { commands: ["runner-probe:settings"], settings: { "runner-probe": given } })).ok, true);
+    assert.deepEqual(JSON.parse(await readFile(join(brought, "probe-settings.json"), "utf8")), { greeting: "hello" });
+
+    // A plugin the vault has, with settings of its own
+    const own = await newVault("settings-own");
+    const folder = join(own, ".obsidian", "plugins", "runner-probe");
+    await mkdir(folder, { recursive: true });
+    await cp(probe, folder, { recursive: true });
+    await writeFile(join(folder, "data.json"), '{"own":true}');
+    assert.equal((await go(own, { plugins: [], commands: ["runner-probe:settings"], settings: { "runner-probe": given } })).ok, true);
+    assert.deepEqual(JSON.parse(await readFile(join(own, "probe-settings.json"), "utf8")), { greeting: "hello" });
+    assert.equal(await readFile(join(folder, "data.json"), "utf8"), '{"own":true}', "the settings of the vault's plugin are as they were");
+
+    // A plugin that is nowhere, and a file that is no JSON, are refused before Obsidian is started
+    const usage = (error: unknown): boolean => error instanceof RunError && error.exit === EXIT.usage;
+    await assert.rejects(go(brought, { commands: ["runner-probe:settings"], settings: { "no-such-plugin": given } }), usage);
+    await writeFile(join(work, "broken.json"), "{");
+    await assert.rejects(go(brought, { commands: ["runner-probe:settings"], settings: { "runner-probe": join(work, "broken.json") } }), usage);
+  });
+
+  it("runs a file of code before the commands, in one run", async () => {
+    const vault = await newVault("code-first");
+    const code = join(work, "first.js");
+    await writeFile(code, 'await app.vault.adapter.write("first.txt", "by the code"); return "ran";');
+    const result = await go(vault, { evalFile: code, commands: ["runner-probe:report"] });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.commands.map((one) => one.command), ["eval", "runner-probe:report"]);
+    assert.equal(await readFile(join(vault, "first.txt"), "utf8"), "by the code");
+  });
+
   it("says what is wrong with a command that is not there or does not apply", async () => {
     const vault = await newVault("missing");
     const missing = await go(vault, { commands: ["runner-probe:reprot"] });
     assert.match(missing.commands[0]?.error ?? "", /has no command "runner-probe:reprot".*runner-probe:report/);
     const never = await go(vault, { commands: ["runner-probe:never"] });
     assert.match(never.commands[0]?.error ?? "", /cannot run now/);
+    // One that gives back nothing when asked does not apply either: Obsidian takes it so
+    const silent = await go(vault, { commands: ["runner-probe:silent"] });
+    assert.match(silent.commands[0]?.error ?? "", /cannot run now/);
     const noPlugin = await go(vault, { plugins: [], commands: ["nobody:nothing"] });
     assert.match(noPlugin.commands[0]?.error ?? "", /Is its plugin in the vault/);
   });

@@ -13,6 +13,8 @@ export interface Options {
   commands: string[];
   /** A file of JavaScript that is run inside Obsidian */
   evalFile: string | null;
+  /** Settings for plugins for the time of the run: the id of a plugin, and the file that is its `data.json` then */
+  settings: Record<string, string>;
   /** JavaScript that is run inside Obsidian, as text: for what the program asks of Obsidian itself, as the list of its commands */
   evalCode: string | null;
   /** What a command is given: `window.obsidianCmdRunner.args` */
@@ -58,6 +60,7 @@ export const DEFAULTS: Options = {
   commands: [],
   evalFile: null,
   evalCode: null,
+  settings: {},
   args: {},
   config: null,
   wait: "auto",
@@ -90,7 +93,8 @@ Options
   --plugin <spec>              put a plugin into the vault for the run; may be given again
                                owner/repo, owner/repo@tag, or a folder with main.js and manifest.json
   --command <id>               the id of a command, as plugin-id:command-id; may be given again
-  --eval <file.js>             run a file of JavaScript inside Obsidian
+  --eval <file.js>             run a file of JavaScript inside Obsidian, before the commands
+  --settings <id=file.json>    the settings of a plugin for the run: its data.json; may be given again
   --arg <key=value>            what the command is given; may be given again
   --args-file <file.json>      the same, from a file
   --config <file.json>         settings for vault-to-site (default: vault-to-site.json in the vault)
@@ -125,7 +129,7 @@ function valueOf(text: string): unknown {
  * @param readJson reads a file of JSON for `--args-file`; an error it throws is reported with the name of the file
  */
 export function parseArgs(argv: readonly string[], readJson: (path: string) => unknown = () => ({})): Parsed {
-  const options: Options = { ...DEFAULTS, plugins: [], commands: [], args: {} };
+  const options: Options = { ...DEFAULTS, plugins: [], commands: [], args: {}, settings: {} };
   const rest = [...argv];
   let kind: "run" | "install" | "commands" = "run";
   let all = false;
@@ -177,6 +181,15 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
         case "--eval":
           options.evalFile = need();
           break;
+        case "--settings": {
+          const pair = need();
+          const at = pair.indexOf("=");
+          if (at < 1 || at === pair.length - 1) {
+            throw new Error(`--settings is written as plugin-id=file.json, not "${pair}".`);
+          }
+          options.settings[pair.slice(0, at)] = pair.slice(at + 1);
+          break;
+        }
         case "--arg": {
           const pair = need();
           const at = pair.indexOf("=");
@@ -255,9 +268,6 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
     } catch (error) {
       return { kind: "error", message: error instanceof Error ? error.message : String(error) };
     }
-  }
-  if (options.evalFile !== null && options.commands.length > 0) {
-    return { kind: "error", message: "Give --command or --eval, not both." };
   }
   if (kind === "commands") {
     if (options.commands.length > 0 || options.evalFile !== null) {

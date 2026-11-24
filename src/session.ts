@@ -57,14 +57,23 @@ export async function turnOn(page: Page, ids: readonly string[]): Promise<{ on: 
     for (const id of ids) {
       const manifest = plugins.manifests[id];
       if (!manifest) { failed.push({ id, why: "Obsidian does not find it in the vault." }); continue; }
+      // Obsidian keeps to itself why a plugin did not load, and writes it to its console: that is listened to
+      const said = [];
+      const error = console.error;
+      console.error = (...parts) => { said.push(parts.map((part) => (part instanceof Error ? part.message : String(part))).join(" ")); error.apply(console, parts); };
       try {
         await plugins.enablePlugin(id);
-      } catch (error) {
-        failed.push({ id, why: String(error && error.message || error) });
+      } catch (thrown) {
+        failed.push({ id, why: String(thrown && thrown.message || thrown) });
         continue;
+      } finally {
+        console.error = error;
       }
       if (!plugins.plugins[id]) {
-        failed.push({ id, why: "Obsidian did not load it." + (manifest.minAppVersion ? " It asks for Obsidian " + manifest.minAppVersion + " or later." : "") });
+        const running = (/obsidian\\/([0-9.]+)/i.exec(navigator.userAgent) || [])[1] || "";
+        const older = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
+        const tooOld = manifest.minAppVersion && running && older(running, manifest.minAppVersion);
+        failed.push({ id, why: "Obsidian did not load it." + (tooOld ? " It asks for Obsidian " + manifest.minAppVersion + " or later, and this is " + running + "." : "") + (said.length > 0 ? " Obsidian said: " + said[said.length - 1].slice(0, 400) : "") });
       }
     }
     closeModals();
@@ -140,7 +149,10 @@ const followWork = (isTraced: boolean): string => `(() => {
   const job = {};
   // What Node.js asks of the system and is answered once, and a program it has started. Not what stays
   // open for as long as Obsidian runs, as the watching of a folder.
-  const ASKED = /^(FSREQ|FILEHANDLECLOSEREQ|PROCESSWRAP|WRITEWRAP|SHUTDOWNWRAP|GETADDRINFOREQWRAP|GETNAMEINFOREQWRAP|TCPCONNECTWRAP|PIPECONNECTWRAP|HTTPCLIENTREQUEST|ZLIB|RANDOMBYTESREQUEST|PBKDF2REQUEST|SCRYPTREQUEST|SIGNREQUEST|Timeout|Immediate|WORKER)/;
+  // Not what stays for as long as its owner keeps it, whatever is going on: a stream that packs data, a worker.
+  const ASKED = /^(FSREQ|FILEHANDLECLOSEREQ|PROCESSWRAP|WRITEWRAP|SHUTDOWNWRAP|GETADDRINFOREQWRAP|GETNAMEINFOREQWRAP|TCPCONNECTWRAP|PIPECONNECTWRAP|HTTPCLIENTREQUEST|RANDOMBYTESREQUEST|PBKDF2REQUEST|SCRYPTREQUEST|SIGNREQUEST|Timeout|Immediate)/;
+  // A timer set for longer than this is not waited for by itself: see above
+  const LONGEST = 2000;
   const open = new Map();
   // Where each thing that is open was started, when that is asked for
   const where = new Map();
@@ -203,8 +215,18 @@ const followWork = (isTraced: boolean): string => `(() => {
       open.set(id, "promise");
       note(id, sites);
       moves++;
+    } else if (isTimer) {
+      // The timers of Node.js, by the same rules as those of the browser: not one that repeats, not one
+      // set for long, and only one that the code of a plugin sets. A server a plugin starts keeps a timer
+      // that repeats for as long as it lives.
+      if (resource && (resource._repeat != null || Number(resource._idleTimeout) > LONGEST)) return;
+      const sites = callers(init);
+      if (!isOfPlugin(sites)) return;
+      open.set(id, "timer");
+      note(id, sites);
+      moves++;
     } else if (isAsked) {
-      open.set(id, isTimer ? "timer" : "system");
+      open.set(id, "system");
       note(id);
       moves++;
     }
@@ -217,8 +239,6 @@ const followWork = (isTraced: boolean): string => `(() => {
 
   // The timers of the browser, and what it calls before it draws: the command they were set by goes with them
   const kept = { setTimeout: window.setTimeout, clearTimeout: window.clearTimeout, requestAnimationFrame: window.requestAnimationFrame, cancelAnimationFrame: window.cancelAnimationFrame, requestIdleCallback: window.requestIdleCallback, cancelIdleCallback: window.cancelIdleCallback };
-  // A timer set for longer than this is not waited for by itself: see above
-  const LONGEST = 2000;
   const once = (set, clear, kind, isCounted) => {
     const ids = new Map();
     const wrapped = function (callback, ...rest) {
@@ -407,7 +427,10 @@ export async function startCommand(page: Page, id: string): Promise<Started> {
     }
     // A command can say that it does not apply now. Obsidian does not pass that on, so it is asked first.
     const command = app.commands.commands[id];
-    const applies = typeof command.checkCallback !== "function" || command.checkCallback(true) !== false;
+    // As Obsidian takes the answer: a command that gives back nothing does not apply either
+    const applies = typeof command.checkCallback !== "function" || Boolean(command.checkCallback(true));
+    // The windows that are open before the command: one that is there after it and was not before is the command's
+    window.__obsidianCmdRunner.windows = new Set(document.querySelectorAll(".modal-container"));
     let threw = null;
     // Obsidian keeps to itself what a command throws, and says only that the command did not run. So a
     // command that needs nothing of the editor is called here as Obsidian would call it, and what it
@@ -459,7 +482,7 @@ export function listCode(all: boolean): string {
       const owner = command.id.includes(":") ? command.id.slice(0, command.id.indexOf(":")) : "";
       let applies = true;
       // Asked as Obsidian asks before it shows a command: nothing is run by it
-      try { applies = typeof command.checkCallback !== "function" || command.checkCallback(true) !== false; } catch (error) { applies = false; }
+      try { applies = typeof command.checkCallback !== "function" || Boolean(command.checkCallback(true)); } catch (error) { applies = false; }
       const needsNote = typeof command.editorCallback === "function" || typeof command.editorCheckCallback === "function";
       return { id: command.id, name: String(command.name || ""), plugin: plugins.includes(owner) ? owner : null, needsNote, applies: applies && !needsNote };
     });
@@ -479,6 +502,25 @@ export async function workLeft(page: Page): Promise<Work | null> {
 export async function dropUnkept(page: Page): Promise<void> {
   await page.send("HeapProfiler.collectGarbage");
   await page.evaluate(`(() => { window.__obsidianCmdRunner?.work?.nudge(); })()`);
+}
+
+/**
+ * The window a command has opened and left open, by what it says at its
+ * top, or null. A command that asks something in a window and has no work
+ * going on is waiting for an answer, and in a run nobody is there to give
+ * one: its work was not done.
+ */
+export async function windowLeftOpen(page: Page): Promise<string | null> {
+  return page.evaluate<string | null>(`(() => {
+    const before = window.__obsidianCmdRunner.windows;
+    if (!before) return null;
+    const opened = Array.from(document.querySelectorAll(".modal-container")).find((one) => !before.has(one));
+    if (!opened) return null;
+    const title = opened.querySelector(".modal-title");
+    // As it is read, with its lines apart, where the page says so: the words of a title and of a text do not run together
+    const text = ((title && title.textContent) || opened.innerText || opened.textContent || "").trim().replace(/\\s+/g, " ");
+    return text.slice(0, 120) || "a window with no words";
+  })()`);
 }
 
 /** Stops following the work of a command: the page is as it was */

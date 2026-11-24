@@ -7,7 +7,7 @@ import { defaultCacheDir, installObsidian, programOfApp, resolveVersionKept, wor
 import { chooseScreen, freePort, makeScreen, start, startArgs, type Running } from "./launch.ts";
 import { parsePlugin, placePlugin, removePlaced, type Placed, type PluginSource } from "./plugins.ts";
 import type { Fetch } from "./releases.ts";
-import { dropUnkept, offerRunner, runCode, startCommand, stopFollowing, turnOn, whenDone, whenIndexed, whenReady, workLeft, type Outcome, type Work } from "./session.ts";
+import { dropUnkept, offerRunner, runCode, startCommand, stopFollowing, windowLeftOpen, turnOn, whenDone, whenIndexed, whenReady, workLeft, type Outcome, type Work } from "./session.ts";
 import { keepSettings, prepareProfile, restoreSettings, type Kept } from "./vault.ts";
 
 /** The plugin that builds a site, and its command: what a run does when it is told nothing else */
@@ -265,6 +265,8 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
 
   let kept: Kept | null = null;
   const placed: Placed[] = [];
+  /** The settings files of plugins that were written over for the run, with what they held, or null for none */
+  const own: { file: string; before: string | null }[] = [];
   let profile: string | null = null;
   let running: Running | null = null;
   let made: { display: string; stop(): void } | null = null;
@@ -324,6 +326,26 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       // The plugin that builds the site is fetched when nothing has brought it: not the vault, and not a plugin that was named
       if (site && !isFolder(join(pluginsDir, SITE_PLUGIN.id))) {
         await place(sourceOf(SITE_PLUGIN.source));
+      }
+      // The settings a plugin is given for the run: its own, when it has some, are put back after it
+      for (const [id, from] of Object.entries(options.settings)) {
+        const folder = join(pluginsDir, id);
+        if (!isFolder(folder)) {
+          throw new RunError(`--settings names the plugin "${id}", which is not in the vault and was not named with --plugin.`, EXIT.usage);
+        }
+        const given = await readFile(resolve(from), "utf8").catch(() => null);
+        let isJson = given !== null;
+        try {
+          JSON.parse(given ?? "");
+        } catch {
+          isJson = false;
+        }
+        if (given === null || !isJson) {
+          throw new RunError(`"${from}" could not be read as JSON: it was to be the settings of the plugin "${id}".`, EXIT.usage);
+        }
+        const file = join(folder, "data.json");
+        own.push({ file, before: await readFile(file, "utf8").catch(() => null) });
+        await writeFile(file, given);
       }
     });
 
@@ -438,6 +460,11 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
           .finally(() => {
             waiting = false;
           });
+        // Nothing of its work is left, and a window it opened is: it asks something, and nobody is there to answer
+        const asking = outcome.ok ? await windowLeftOpen(open) : null;
+        if (asking !== null) {
+          outcome = { ok: false, result: null, error: `The command opened a window and left it open ("${asking}"). It waits for an answer that nobody is there to give, so its work was not done.` };
+        }
       } else if (options.wait === "auto" && !saidNotFollowed) {
         // Not passed over in silence: the run goes on while the command may still be working
         saidNotFollowed = true;
@@ -474,6 +501,10 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       await running?.stop();
     }
     made?.stop();
+    // The settings of a plugin of the vault are its owner's: put back also when the rest is left
+    for (const { file, before } of own) {
+      await (before === null ? rm(file, { force: true }) : writeFile(file, before)).catch(() => undefined);
+    }
     if (!options.keep) {
       await removePlaced(placed).catch(() => undefined);
       if (kept !== null) {

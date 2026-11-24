@@ -112,13 +112,87 @@ vault-to-site
 - `--json` gives the list as JSON.
 - A command marked **works on the note that is open** needs a note in the editor, and a run has none. One marked **does not apply now** says itself that it cannot run as things are.
 
-A command that is on the list can be started. Whether it is of use with nobody there is another matter: one that opens a window and waits for a click will wait until its time is over. The next part names plugins that were tried.
+A command that is on the list can be started. Whether it is of use with nobody there is another matter: one that opens a window and asks something has nobody to answer it. The next part names plugins that were tried.
 
 ## Plugins that were tried
 
-The list is being made: a plugin is put on it after it was run this way, not before.
+Each of these was run this way before it was put on the list: with Obsidian 1.15.1 on Linux, with no screen, in a small vault made for it. The version is the one that was tried. A plugin that is not here may work as well: ask for its commands and try.
 
-<!-- PLUGINS -->
+**They work as they are:**
+
+| Plugin | Command | What it does |
+| --- | --- | --- |
+| Obsidian itself | `daily-notes` | Makes the daily note of today, from the folder and template its settings name |
+| [vault-to-site](https://github.com/somebodil/vault-to-site) 0.1.0 | `vault-to-site:build-again` | Builds a website of the notes that `vault-to-site.json` names. This is what runs when no command is named. |
+| [Find orphaned files and broken links](https://github.com/vinzent03/find-unlinked-files) 1.11.0 | `find-unlinked-files:find-unlinked-files`<br>`find-unlinked-files:find-unresolved-link`<br>`find-unlinked-files:find-files-without-tags`<br>`find-unlinked-files:find-empty-files` | Each writes a note with what it found: notes nothing links to, links that lead nowhere, notes without tags, empty notes |
+| [Vault Changelog](https://github.com/philoserf/obsidian-vault-changelog) 2.0.0 | `obsidian-vault-changelog:update-changelog` | Writes `Changelog.md`, the notes that were changed last |
+| [Periodic Notes](https://github.com/liamcain/obsidian-periodic-notes) 0.0.17 | `periodic-notes:open-daily-note` | Makes the note of today. The notes of the week and the month need its settings. |
+| [Local Backup](https://github.com/velviagris/obsidian-local-backup) 0.2.5 | `local-backup:run-local-backup` | Writes a zip archive of the vault. Told nothing, into the folder above the vault: name another with its settings. |
+| [Clear Unused Images](https://github.com/ozntel/oz-clear-unused-images-obsidian) 1.1.1 | `oz-clear-unused-images:clear-images-obsidian` | **Changes the vault:** moves the pictures no note uses to the trash |
+| [Janitor](https://github.com/Canna71/obsidian-janitor) 1.2.0 | `janitor:scan-files-noprompt` | **Changes the vault:** moves what it finds unused to the trash, without asking |
+
+**They work with settings.** A plugin reads its settings from its file `data.json`. `--settings plugin-id=file.json` gives it that file for the run, also a plugin that is brought with `--plugin`:
+
+```sh
+obsidian-cmd-runner --vault notes --plugin platers/obsidian-linter \
+  --settings obsidian-linter=linter.json --command obsidian-linter:lint-all-files
+```
+
+| Plugin | Command | What it does | What its settings have to say |
+| --- | --- | --- | --- |
+| [Linter](https://github.com/platers/obsidian-linter) 1.35.0 | `obsidian-linter:lint-all-files` | **Changes the vault:** writes every note anew by its rules | `"suppressLintAllFilesConfirmationModal": true`, and the rules under `ruleConfigs`. Without the first it asks in a window. |
+| [Webpage HTML Export](https://github.com/KosmosisDire/obsidian-webpage-export) 1.9.2 | `webpage-html-export:export-html-vault` | Writes the notes as web pages | Under `exportOptions`: `exportPath`, a folder that is there, by its whole path, and `filesToExport`, the notes and folders. `"openAfterExport": false`. |
+| [Templater](https://github.com/SilentVoid13/Templater) 2.27.0 | `templater-obsidian:create-<path of a template>` | Makes a note from that template | `templates_folder`, and the template among `enabled_templates_hotkeys`: a template has a command only then |
+| [Metadata Extractor](https://github.com/kometenstaub/metadata-extractor) 1.1.0 | `metadata-extractor:write-metadata-json`<br>`metadata-extractor:write-tags-json` | Writes the notes with their links, and the tags, as JSON | `metadataPath`, `tagPath`: files by their whole path. Told nothing, it writes into its own folder, which is gone after the run. |
+| [File Cleaner Redux](https://github.com/husjon/obsidian-file-cleaner-redux) 1.17.0 | `file-cleaner-redux:clean-files` | **Changes the vault:** moves empty notes and unused files to the trash | `"deletionConfirmation": false`. And in the vault's `.obsidian/app.json`, `"trashOption": "local"`: with no screen there is no trash of the system. |
+| [Dataview Serializer](https://github.com/dsebastien/obsidian-dataview-serializer) 3.8.0 | `dataview-serializer:serialize-all-dataview-queries` | Writes what the queries of Dataview find into the notes | Nothing, but it needs [Dataview](https://github.com/blacksmithgu/obsidian-dataview) as a second `--plugin`, and Dataview has to have read the notes first: see below |
+
+**They work on the note that is open,** and a run has none. A file of code can open one before the command, in the same run:
+
+```js
+// open.js
+const note = app.vault.getAbstractFileByPath(runner.args.note);
+await app.workspace.getLeaf(false).openFile(note);
+```
+
+```sh
+obsidian-cmd-runner --vault notes --plugin platers/obsidian-linter --settings obsidian-linter=linter.json \
+  --eval open.js --arg note=Projects/Plan.md --command obsidian-linter:lint-file
+```
+
+| Plugin | Command | What it does | What else it needs |
+| --- | --- | --- | --- |
+| Linter 1.35.0 | `obsidian-linter:lint-file` | Writes the open note anew by its rules | Its rules, as above |
+| Templater 2.27.0 | `templater-obsidian:replace-in-file-templater` | Runs the template code in the open note | |
+| [Pandoc Plugin](https://github.com/OliverBalfour/obsidian-pandoc) 0.4.1 | `obsidian-pandoc:pandoc-export-html`<br>`obsidian-pandoc:pandoc-export-docx` | Writes the open note as HTML or for Word, beside the note | For Word, `pandoc` on the computer |
+| [Enhancing Export](https://github.com/mokeyish/obsidian-enhancing-export) 1.11.4 | `obsidian-enhancing-export:obsidian-enhancing-export:export-with-previous` | Writes the open note as it was written last | `pandoc`, and settings: `lastExportType`, `lastExportDirectory`, `"openExportedFile": false` |
+
+**A plugin that another plugin has to be ready for.** A run waits until Obsidian has read the notes, not until every plugin has. Dataview reads them once more for itself, and a command that asks Dataview at once finds nothing. A file of code before the command waits for it:
+
+```js
+const dataview = app.plugins.plugins.dataview;
+if (!dataview.index?.initialized) await new Promise((ready) => app.metadataCache.on("dataview:index-ready", ready));
+```
+
+**They need somebody,** so they are not for a run. Each opens a window and waits for an answer; the run ends with 1 and says which window was left open.
+
+| Plugin | Command |
+| --- | --- |
+| Obsidian itself | `workspace:export-pdf` |
+| [Better Export PDF](https://github.com/l1xnan/obsidian-better-export-pdf) 2.0.4 | `better-export-pdf:export-current-file-to-pdf` |
+| [Link Converter](https://github.com/ozntel/obsidian-link-converter) 0.1.6 | `obsidian-link-converter:convert-wikis-to-md-in-vault` and the other way |
+| [Nuke Orphans](https://github.com/sandorex/nuke-orphans-plugin) 1.2.5 | `nuke-orphans:nuke-orphaned` |
+| Find orphaned files and broken links | `find-unlinked-files:delete-empty-files`, `find-unlinked-files:delete-empty-folders` |
+| Templater | `templater-obsidian:create-new-note-from-template` |
+| Webpage HTML Export | `webpage-html-export:export-html-setting` |
+
+**Not tried, because they send notes somewhere:** plugins that publish or sync need an account, and were only looked at. [Git](https://github.com/Vinzent03/obsidian-git) commits with `obsidian-git:commit` when it is installed in the vault, but it takes in the settings files Obsidian writes when it opens a vault: look at what it commits before you let it run by itself.
+
+What to know of all of them:
+
+- **A command that fails may still end with 0.** Most plugins show what went wrong as a notice and go on. The notice is printed, but the run cannot know that it was bad news.
+- **What a plugin writes into its own folder is gone after the run** when the plugin was brought with `--plugin`. Have it write into the vault.
+- **Settings Obsidian keeps for the vault,** as those of the daily note, are files in `.obsidian` of the vault, and are read as they are.
 
 ## Options
 
@@ -127,7 +201,8 @@ The list is being made: a plugin is put on it after it was run this way, not bef
 | `--vault <folder>` | The vault. To begin with, the folder you are in. |
 | `--plugin <spec>` | Put a plugin into the vault for the run. May be given again. See below. |
 | `--command <id>` | The id of a command, as `plugin-id:command-id`. May be given again: they run in that order. |
-| `--eval <file.js>` | Run a file of JavaScript inside Obsidian. What it returns is the result. |
+| `--eval <file.js>` | Run a file of JavaScript inside Obsidian, before the commands. What it returns is the result. In it, `runner.args` is what was given with `--arg`. |
+| `--settings <id=file.json>` | Give a plugin its settings for the run: the file is its `data.json` then. May be given again. The settings a plugin of the vault had are put back. |
 | `--arg <key=value>` | What the command is given. A value that is JSON is read as JSON. May be given again. |
 | `--args-file <file.json>` | The same, from a file. |
 | `--wait <auto\|none\|file:PATH>` | When a command counts as done. See [below](#when-a-command-counts-as-done). |
@@ -181,7 +256,8 @@ A command is taken to have ended when nothing it started is going on, and nothin
 
 | The command | What the run does |
 | --- | --- |
-| Waits for somebody, as with a window to click in | Does not end. The run ends when its time is over (`--timeout`), with 124, and says what was left. With `--verbose` it also says where in the code that was started. |
+| Opens a window that asks something, and leaves it open | The run ends with 1 and says what the window asks: the work was not done |
+| Waits for somebody in another way, as for a click on something in the page | Does not end. The run ends when its time is over (`--timeout`), with 124, and says what was left. With `--verbose` it also says where in the code that was started. |
 | Leaves something running: a timer that repeats, or a timer of more than two seconds that nothing waits for | Does not wait for it |
 | Starts work in a way the run cannot see: a message to a worker or to another window, with nothing in the plugin waiting for the answer | Ends too early. Name a file to wait for. A plugin that waits for the answer is followed. |
 | Is of Obsidian itself, not of a plugin | Is followed only by what it asks of the system. What Obsidian waits for inside its own code is not counted: some of it stays open for as long as Obsidian runs. |
