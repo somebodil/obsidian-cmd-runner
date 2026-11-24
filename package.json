@@ -34,7 +34,8 @@
   "files": [
     "bin",
     "dist",
-    "action.yml"
+    "action.yml",
+    "COMPATIBILITY.md"
   ],
   "engines": {
     "node": ">=22.18"
