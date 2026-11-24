@@ -15,13 +15,42 @@ export function freePort(): Promise<number> {
   });
 }
 
+/** How Obsidian gets a screen to draw on */
+export type Screen =
+  /** The screen of the computer: the window is seen */
+  | "shown"
+  /** A screen that is not there, made for the run (Xvfb) */
+  | "made"
+  /** No screen at all: the browser inside Obsidian draws into nothing */
+  | "none";
+
 /**
- * How Obsidian is started so that nothing of it is seen and it works at full
- * speed all the same.
+ * Which screen a run uses. Outside Linux there is only the screen of the
+ * computer. On Linux the window is hidden unless it is to be shown: on a
+ * screen made for the run when the program for that is installed, as it is
+ * on the build servers of GitHub, and else with no screen at all.
  *
- * - On Linux without a screen, as on a server, it is given a screen that is
- *   not there: `xvfb-run` when that is installed, else the mode of the
- *   browser inside Obsidian that needs none.
+ * @param forced `OBSIDIAN_CMD_RUNNER_SCREEN`, to choose one of them by hand
+ */
+export function chooseScreen(platform: string, env: NodeJS.ProcessEnv, show: boolean, has: (command: string) => boolean = hasCommand): Screen {
+  if (platform !== "linux") {
+    return "shown";
+  }
+  const forced = env.OBSIDIAN_CMD_RUNNER_SCREEN;
+  if (forced === "shown" || forced === "made" || forced === "none") {
+    return forced;
+  }
+  const hasScreen = (env.DISPLAY ?? "") !== "" || (env.WAYLAND_DISPLAY ?? "") !== "";
+  if (show && hasScreen) {
+    return "shown";
+  }
+  return has("Xvfb") ? "made" : hasScreen ? "shown" : "none";
+}
+
+/**
+ * The words Obsidian is started with, so that it works at full speed without
+ * being looked at.
+ *
  * - A window that is not looked at is slowed down by the browser: its timers
  *   run once a second. A run would take many times as long, so that is
  *   turned off.
@@ -29,15 +58,7 @@ export function freePort(): Promise<number> {
  *   where the browser's own sandbox cannot be set up. It is turned off on
  *   Linux: what runs is the user's own vault and plugins.
  */
-export function startCommand(
-  program: string,
-  profile: string,
-  port: number,
-  show: boolean,
-  platform: string = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-  has: (command: string) => boolean = hasCommand,
-): { command: string; args: string[] } {
+export function startArgs(profile: string, port: number, screen: Screen, platform: string = process.platform): string[] {
   const args = [
     `--user-data-dir=${profile}`,
     `--remote-debugging-port=${String(port)}`,
@@ -47,25 +68,49 @@ export function startCommand(
     "--disable-backgrounding-occluded-windows",
     "--no-first-run",
   ];
-  if (platform !== "linux") {
-    return { command: program, args };
+  if (platform === "linux") {
+    args.push("--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage");
+    if (screen === "none") {
+      args.push("--ozone-platform=headless");
+    }
   }
-  args.push("--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage");
-  const hasScreen = (env.DISPLAY ?? "") !== "" || (env.WAYLAND_DISPLAY ?? "") !== "";
-  if (hasScreen && show) {
-    return { command: program, args };
-  }
-  if (has("xvfb-run")) {
-    return { command: "xvfb-run", args: ["--auto-servernum", "--server-args=-screen 0 1440x900x24", program, ...args] };
-  }
-  if (hasScreen) {
-    return { command: program, args };
-  }
-  return { command: program, args: [...args, "--ozone-platform=headless"] };
+  return args;
 }
 
 export function hasCommand(command: string): boolean {
   return spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" }).status === 0;
+}
+
+/**
+ * Makes a screen that is not there, and says its name as soon as it is
+ * ready. Started here and not through `xvfb-run`, which waits three seconds
+ * every time whether the screen is ready or not.
+ */
+export function makeScreen(within = 10_000): Promise<{ display: string; stop(): void }> {
+  return new Promise((resolve, reject) => {
+    // The screen writes its number to the fourth channel when it listens: any number that is free
+    const child = spawn("Xvfb", ["-displayfd", "3", "-screen", "0", "1440x900x24", "-nolisten", "tcp"], { stdio: ["ignore", "ignore", "ignore", "pipe"] });
+    let said = "";
+    const late = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("The screen for the run (Xvfb) did not start."));
+    }, within);
+    child.on("error", (error) => {
+      clearTimeout(late);
+      reject(new Error(`The screen for the run (Xvfb) could not be started: ${error.message}`));
+    });
+    child.on("exit", (code) => {
+      clearTimeout(late);
+      reject(new Error(`The screen for the run (Xvfb) ended with ${String(code)}.`));
+    });
+    (child.stdio[3] as NodeJS.ReadableStream).on("data", (chunk: Buffer) => {
+      said += chunk.toString();
+      if (said.includes("\n")) {
+        clearTimeout(late);
+        resolve({ display: `:${said.trim()}`, stop: () => void child.kill("SIGTERM") });
+      }
+    });
+  });
 }
 
 export interface Running {
@@ -77,9 +122,9 @@ export interface Running {
   stop(): Promise<void>;
 }
 
-export function start(command: string, args: string[]): Running {
-  // A group of its own, so that the screen that is not there and the helpers of the browser end with it
-  const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], detached: true });
+export function start(command: string, args: string[], env: NodeJS.ProcessEnv = process.env): Running {
+  // A group of its own, so that the helpers of the browser end with it
+  const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], detached: true, env });
   let said = "";
   let ended: string | null = null;
   const take = (chunk: Buffer): void => {

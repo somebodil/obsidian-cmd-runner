@@ -32,6 +32,8 @@ jobs:
       fail-fast: false
       matrix:
         version: ["${{ inputs.obsidian-version || 'latest' }}", "1.8.10"]
+        # A screen made for the run, and no screen at all
+        screen: [made, none]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,12 +47,13 @@ jobs:
           key: obsidian-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
       - name: What the computer has
         run: |
-          echo "xvfb-run: $(command -v xvfb-run || echo none)"
+          echo "Xvfb: $(command -v Xvfb || echo none)"
           echo "DISPLAY: ${DISPLAY:-none}"
           nproc; free -m | head -2
       - name: Runs in a real Obsidian
         env:
           OBSIDIAN_VERSION: ${{ steps.version.outputs.version }}
+          OBSIDIAN_CMD_RUNNER_SCREEN: ${{ matrix.screen }}
         run: node --test test/e2e.ts
 
   # The action itself, as another repository would use it

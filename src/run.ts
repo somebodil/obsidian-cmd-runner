@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import type { Options } from "./args.ts";
 import { connect, type Page } from "./cdp.ts";
 import { defaultCacheDir, installObsidian, programOfApp, workDir } from "./install.ts";
-import { freePort, start, startCommand as startProgram, type Running } from "./launch.ts";
+import { chooseScreen, freePort, makeScreen, start, startArgs, type Running } from "./launch.ts";
 import { parsePlugin, placePlugin, removePlaced, type Placed } from "./plugins.ts";
 import { resolveVersion, type Fetch } from "./releases.ts";
 import { offerRunner, runCode, startCommand, turnOn, whenDone, whenIndexed, whenReady, type Outcome } from "./session.ts";
@@ -155,6 +155,7 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
   const placed: Placed[] = [];
   let profile: string | null = null;
   let running: Running | null = null;
+  let made: { display: string; stop(): void } | null = null;
   let page: Page | null = null;
   let stopped = false;
   void stop.then(() => {
@@ -185,8 +186,13 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     profile = await workDir();
     await prepareProfile(profile, vault, Date.now());
     const port = await freePort();
-    const command = startProgram(program, profile, port, options.show);
-    running = start(command.command, command.args);
+    const screen = chooseScreen(process.platform, io.env, options.show);
+    if (screen === "made") {
+      made = await lap("start", () => makeScreen()).catch((error: unknown) => {
+        throw new RunError(error instanceof Error ? error.message : String(error), EXIT.obsidian);
+      });
+    }
+    running = start(program, startArgs(profile, port, screen), made === null ? io.env : { ...io.env, DISPLAY: made.display });
     const live = running;
 
     page = await lap("start", () => connect(port, START_LIMIT, () => live.ended())).catch((error: unknown) => {
@@ -261,6 +267,7 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     const from = clock();
     page?.close();
     await running?.stop();
+    made?.stop();
     if (!options.keep) {
       await removePlaced(placed).catch(() => undefined);
       if (kept !== null) {
