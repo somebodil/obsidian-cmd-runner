@@ -36,7 +36,7 @@ Not made by Obsidian, and not one of its tools. Obsidian is not part of this pac
 You need [Node.js](https://nodejs.org) 22.18 or later, on Linux (x64 or arm64) or macOS. On Linux nothing else: Obsidian runs with no screen at all.
 
 ```sh
-npm install -g github:somebodil/obsidian-cmd-runner
+npm install -g obsidian-cmd-runner
 ```
 
 The first run fetches Obsidian (about 130 MB on Linux, 230 MB on macOS) and keeps it for later runs.
