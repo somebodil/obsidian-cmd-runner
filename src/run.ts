@@ -224,7 +224,7 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     }
   };
 
-  // Told nothing, nothing is run: no plugin and no command is the one of this program
+  // Told nothing, nothing is run
   if (options.commands.length === 0 && options.evalFile === null && options.evalCode === null) {
     throw new RunError(
       'Nothing to run: name a command with --command, or a file of JavaScript with --eval. "obsidian-cmd-runner commands" lists the commands there are.',

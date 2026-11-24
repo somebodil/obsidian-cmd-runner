@@ -137,8 +137,6 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
   if (rest[0] === "install" || rest[0] === "commands") {
     kind = rest[0];
     rest.shift();
-  } else if (rest[0] === "run") {
-    rest.shift();
   }
   while (rest.length > 0) {
     const flag = rest.shift() ?? "";

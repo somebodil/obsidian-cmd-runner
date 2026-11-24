@@ -120,7 +120,6 @@ export async function installObsidian(
     if (!(await exists(programIn(unpacked, platform)))) {
       throw new Error(`"${asset.name}" was unpacked, but the program of Obsidian is not in it.`);
     }
-    await writeFile(join(unpacked, ".obsidian-cmd-runner"), JSON.stringify({ version, from: asset.url }) + "\n");
     try {
       await rename(unpacked, folder);
     } catch (error) {

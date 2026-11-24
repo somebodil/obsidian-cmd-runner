@@ -55,10 +55,8 @@ runs:
         INPUT_COMMANDS: ${{ inputs.commands }}
         INPUT_ARGS: ${{ inputs.args }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        OBSIDIAN_CMD_RUNNER_CACHE: ~/.obsidian-cmd
       run: |
         set -euo pipefail
-        export OBSIDIAN_CMD_RUNNER_CACHE="$HOME/.obsidian-cmd"
         args=(--vault "${{ inputs.vault }}" --obsidian-version "${{ steps.version.outputs.version }}" --timeout "${{ inputs.timeout }}" --json)
         while IFS= read -r line; do [ -n "$line" ] && args+=(--plugin "$line"); done <<< "$INPUT_PLUGINS"
         while IFS= read -r line; do [ -n "$line" ] && args+=(--command "$line"); done <<< "$INPUT_COMMANDS"

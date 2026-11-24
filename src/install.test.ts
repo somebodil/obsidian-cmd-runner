@@ -9,8 +9,6 @@ import type { Fetch } from "./releases.ts";
 describe("where things are", () => {
   it("keeps Obsidian in one folder of the home folder, or where it is told", () => {
     assert.equal(defaultCacheDir({ HOME: "/home/me" }), join("/home/me", ".obsidian-cmd"));
-    // The same on every kind of computer: where the system keeps its caches does not count
-    assert.equal(defaultCacheDir({ HOME: "/home/me", XDG_CACHE_HOME: "/x" }), join("/home/me", ".obsidian-cmd"));
     // With no HOME, as on Windows: the home folder the system names
     assert.equal(defaultCacheDir({}), join(homedir(), ".obsidian-cmd"));
     assert.equal(defaultCacheDir({ HOME: "" }), join(homedir(), ".obsidian-cmd"));

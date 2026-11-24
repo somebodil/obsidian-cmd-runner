@@ -63,7 +63,7 @@ obsidian-cmd-runner --vault notes \
   --command first:prepare --command second:export
 ```
 
-**Told nothing, it runs nothing.** No plugin and no command is the one of this tool: a run with no `--command` and no `--eval` ends with the number 2 and says what is missing.
+**Told nothing, it runs nothing.** A run with no `--command` and no `--eval` ends with the number 2 and says what is missing.
 
 **How it ended** is the number the program ends with:
 

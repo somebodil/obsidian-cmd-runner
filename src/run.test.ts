@@ -148,7 +148,7 @@ describe("run, up to the start of Obsidian", () => {
     try {
       const asked: string[] = [];
       await assert.rejects(run({ ...options, commands: [] }, io(answering({}, asked))), (error: unknown) => error instanceof RunError && error.exit === EXIT.usage && /Nothing to run/.test(error.message));
-      // A plugin that is named changes nothing: none of them is the one of this program
+      // A plugin that is named is not a thing to run
       await assert.rejects(run({ ...options, commands: [], plugins: ["owner/repo"] }, io(answering({}, asked))), exitIs(EXIT.usage));
       assert.deepEqual(asked, []);
       assert.equal(started(), false);

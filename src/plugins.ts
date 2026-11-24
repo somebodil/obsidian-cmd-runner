@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
 /** Where a plugin for a run comes from */
@@ -209,9 +209,4 @@ export async function removePlaced(placed: readonly Placed[]): Promise<void> {
       await rm(plugin.folder, { recursive: true, force: true });
     }
   }
-}
-
-/** Copies a plugin folder as it is: for tests */
-export async function copyPlugin(from: string, to: string): Promise<void> {
-  await cp(from, to, { recursive: true });
 }

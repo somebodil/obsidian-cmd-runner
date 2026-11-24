@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 
 /** A port nothing listens on. Asked of the system, which gives one that is free now. */
@@ -109,9 +109,6 @@ export function makeScreen(within = 10_000): Promise<{ display: string; stop(): 
 }
 
 export interface Running {
-  child: ChildProcess;
-  /** What Obsidian wrote while it ran: shown when it ends without being asked to */
-  output(): string;
   /** Why it has ended, or null while it runs */
   ended(): string | null;
   /** @param ask a way to ask it to end that is tried before the program is told to */
@@ -144,8 +141,6 @@ export function start(command: string, args: string[], env: NodeJS.ProcessEnv = 
     }
   };
   return {
-    child,
-    output: () => said,
     ended: () => ended,
     stop: (ask) =>
       new Promise((resolve) => {
