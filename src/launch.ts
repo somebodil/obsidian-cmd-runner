@@ -119,7 +119,8 @@ export interface Running {
   output(): string;
   /** Why it has ended, or null while it runs */
   ended(): string | null;
-  stop(): Promise<void>;
+  /** @param ask a way to ask it to end that is tried before the program is told to */
+  stop(ask?: () => void): Promise<void>;
 }
 
 export function start(command: string, args: string[], env: NodeJS.ProcessEnv = process.env): Running {
@@ -151,18 +152,21 @@ export function start(command: string, args: string[], env: NodeJS.ProcessEnv = 
     child,
     output: () => said,
     ended: () => ended,
-    stop: () =>
+    stop: (ask) =>
       new Promise((resolve) => {
         if (child.exitCode !== null || child.signalCode !== null) {
           resolve();
           return;
         }
-        const hard = setTimeout(() => signal("SIGKILL"), 4000);
+        // First the way it is asked to, then the way every program is asked to, then without asking. On
+        // Linux, Obsidian does not end soon when it is only told to: the profile of a run is thrown away
+        // anyway, and what a command has written is written.
+        const timers = [setTimeout(() => signal("SIGTERM"), ask === undefined ? 0 : 1000), setTimeout(() => signal("SIGKILL"), ask === undefined ? 1500 : 2500)];
         child.once("exit", () => {
-          clearTimeout(hard);
+          timers.forEach(clearTimeout);
           resolve();
         });
-        signal("SIGTERM");
+        ask?.();
       }),
   };
 }

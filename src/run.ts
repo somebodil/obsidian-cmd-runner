@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Options } from "./args.ts";
-import { connect, type Page } from "./cdp.ts";
+import { connect, PageReloaded, type Page } from "./cdp.ts";
 import { defaultCacheDir, installObsidian, programOfApp, workDir } from "./install.ts";
 import { chooseScreen, freePort, makeScreen, start, startArgs, type Running } from "./launch.ts";
 import { parsePlugin, placePlugin, removePlaced, type Placed } from "./plugins.ts";
@@ -207,14 +207,27 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
         io.console(kind, text);
       }
     });
-    const ready = await lap("open", () => within(whenReady(open), START_LIMIT, "Opening the vault", open, live));
-
     const wanted = [...new Set([...placed.map((plugin) => plugin.id), ...commands.map((id) => id.split(":")[0] ?? "").filter((id) => isFolder(join(pluginsDir, id)))])];
-    const turned = await lap("plugins", () => within(turnOn(open, wanted), START_LIMIT, "Turning the plugins on", open, live));
+    // Obsidian loads its page anew at times while it starts. What was done in the page is gone then,
+    // and is done again: each of these steps can be done twice.
+    const prepare = async (): Promise<{ ready: Awaited<ReturnType<typeof whenReady>>; turned: Awaited<ReturnType<typeof turnOn>> }> => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const ready = await lap("open", () => within(whenReady(open), START_LIMIT, "Opening the vault", open, live));
+          const turned = await lap("plugins", () => within(turnOn(open, wanted), START_LIMIT, "Turning the plugins on", open, live));
+          await lap("index", () => within(whenIndexed(open), START_LIMIT, "Reading the notes", open, live));
+          return { ready, turned };
+        } catch (error) {
+          if (!(error instanceof PageReloaded) || attempt === 5) {
+            throw error;
+          }
+        }
+      }
+    };
+    const { ready, turned } = await prepare();
     if (turned.failed.length > 0) {
       throw new RunError(turned.failed.map((one) => `The plugin ${one.id} could not be turned on. ${one.why}`).join("\n"), EXIT.failed);
     }
-    await lap("index", () => within(whenIndexed(open), START_LIMIT, "Reading the notes", open, live));
 
     const results: CommandResult[] = [];
     const limit = options.timeout * 1000;
@@ -262,11 +275,23 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     if (stopped) {
       throw new RunError("The run was stopped.", 130);
     }
+    if (error instanceof PageReloaded) {
+      throw new RunError("Obsidian loaded its page anew while a command ran, so what came of the command is not known.", EXIT.obsidian);
+    }
     throw error;
   } finally {
     const from = clock();
-    page?.close();
-    await running?.stop();
+    // On Linux Obsidian ends at once when its browser is asked to close, and not soon when the program is
+    // told to end. On macOS it is the other way round: asking only closes the window, and the program
+    // ends at once when told to, once nothing is connected to it any more.
+    const asked = page;
+    if (process.platform === "linux" && asked !== null) {
+      await running?.stop(() => void asked.send("Browser.close").catch(() => undefined));
+      asked.close();
+    } else {
+      page?.close();
+      await running?.stop();
+    }
     made?.stop();
     if (!options.keep) {
       await removePlaced(placed).catch(() => undefined);

@@ -4,6 +4,12 @@
  * JavaScript in it, and hear what it writes to its console.
  */
 
+/**
+ * Thrown when the page was loaded anew while code ran in it. Obsidian does
+ * that at times while it starts. What was asked has to be asked again.
+ */
+export class PageReloaded extends Error {}
+
 export interface Page {
   /** Runs JavaScript in the page and gives back what it returns. A promise it returns is waited for. */
   evaluate<T>(expression: string): Promise<T>;
@@ -116,10 +122,16 @@ function open(address: string): Promise<Page> {
         onConsole: (listener) => listeners.push(listener),
         close: () => socket.close(),
         async evaluate<T>(expression: string): Promise<T> {
-          const reply = (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true })) as {
-            result?: { value?: unknown };
-            exceptionDetails?: { text?: string; exception?: { description?: string } };
-          };
+          let reply: { result?: { value?: unknown }; exceptionDetails?: { text?: string; exception?: { description?: string } } };
+          try {
+            reply = (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true })) as typeof reply;
+          } catch (error) {
+            // The answer to code that ran while the page was loaded anew is an error of the protocol, not of the code
+            if (error instanceof Error && /Execution context was destroyed|Cannot find context|Inspected target navigated/i.test(error.message)) {
+              throw new PageReloaded(error.message);
+            }
+            throw error;
+          }
           if (reply.exceptionDetails !== undefined) {
             throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text ?? "The code threw an error.");
           }
