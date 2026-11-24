@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { findAsset, type Fetch } from "./releases.ts";
+import { findAsset, normalVersion, resolveVersion, type Fetch } from "./releases.ts";
 
 /** Where Obsidian is kept between runs */
 export function defaultCacheDir(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string {
@@ -133,6 +133,34 @@ export async function installObsidian(
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+/** How long the newest version is taken from what was found before, without asking again */
+const LATEST_FOR = 10 * 60 * 1000;
+
+/**
+ * The version to use, as `resolveVersion` gives it. Which version is the
+ * newest is asked of GitHub at most every ten minutes: runs that follow each
+ * other closely, as when a script is tried again and again, do not wait for
+ * the same answer each time.
+ */
+export async function resolveVersionKept(wanted: string, cacheDir: string, fetcher: Fetch, now: number = Date.now()): Promise<string> {
+  if (wanted.trim().toLowerCase() !== "latest") {
+    return resolveVersion(wanted, fetcher);
+  }
+  const file = join(cacheDir, "latest.json");
+  try {
+    const kept = JSON.parse(await readFile(file, "utf8")) as { version?: unknown; at?: unknown };
+    if (typeof kept.version === "string" && typeof kept.at === "number" && normalVersion(kept.version) !== null && now - kept.at >= 0 && now - kept.at < LATEST_FOR) {
+      return kept.version;
+    }
+  } catch {
+    // Not asked before, or not readable: asked now
+  }
+  const version = await resolveVersion(wanted, fetcher);
+  await mkdir(cacheDir, { recursive: true });
+  await writeFile(file, JSON.stringify({ version, at: now }) + "\n").catch(() => undefined);
+  return version;
 }
 
 /** A folder of its own for the things of one run, removed by the caller */

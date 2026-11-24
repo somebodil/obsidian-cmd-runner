@@ -9,7 +9,8 @@ Not made by Obsidian, and not one of its tools. Obsidian is not part of this pac
 ## Requirements
 
 - Node.js 22.18 or later
-- Linux (x64 or arm64) or macOS. On Linux without a screen, `xvfb-run` if it is there; without it, Obsidian is asked to run with no screen at all.
+- Linux (x64 or arm64) or macOS
+- On Linux nothing else: the window is drawn on a screen that is made for the run when `Xvfb` is installed, as it is on the build servers of GitHub, and Obsidian runs with no screen at all when it is not. `OBSIDIAN_CMD_RUNNER_SCREEN` chooses by hand: `made`, `none`, or `shown` for the screen of the computer.
 
 ## What it does when told nothing else
 
@@ -71,6 +72,19 @@ The program ends with 0 when every command was done, 1 when a command failed, 2 
 ## Which Obsidian
 
 `--obsidian-version` takes any version Obsidian has published with a program for your kind of computer: see [its releases](https://github.com/obsidianmd/obsidian-releases/releases). The first run with a version fetches it (about 130 MB on Linux, 230 MB on macOS) into a cache, and later runs take it from there. A run is as far as it can be from your own Obsidian: it has a profile of its own, which is thrown away after the run, and it does not check for updates.
+
+## How long a run takes
+
+Measured with a command that takes a fifth of a second, with Obsidian in the cache:
+
+| | Start Obsidian and open the vault | The whole run |
+| --- | --- | --- |
+| macOS (a laptop) | 0.6 s | 1.5 s |
+| Linux (a build server of GitHub) | 2 to 3 s | 3 to 4 s |
+
+A site of 302 notes with 304 diagrams is built on such a server in 3 seconds, and the whole job, from the checkout to the site, takes under 20. The first run with a version fetches Obsidian, which takes as long as 130 MB take to arrive.
+
+Which version is the newest is asked of GitHub at most every ten minutes.
 
 ## What happens to the vault
 
@@ -168,8 +182,9 @@ console.log(result.ok, result.commands[0]?.result);
 
 ## What was tried, and what was not
 
-- **On macOS** with Obsidian 1.15.1, 1.13.7 and 1.5.12, and **on Linux** on the build servers of GitHub with 1.15.1: commands that end in each way a command can, a vault with settings and plugins of its own, a command that takes too long, a file of code.
-- **Not tried:** Windows, which it does not fetch Obsidian for yet.
+- **On macOS** with Obsidian 1.15.1, 1.13.7 and 1.5.12, and **on Linux** on the build servers of GitHub with 1.15.1 and 1.8.10, with a screen made for the run and with none: commands that end in each way a command can, a vault with settings and plugins of its own, a command that takes too long, a file of code.
+- **A site** was built through vault-to-site on both: on Linux from a vault of 304 notes, of which the 302 that were marked went in, with every diagram and formula drawn. The site was the same, file for file, with a screen made for the run and with none.
+- **Not tried:** Windows, which it does not fetch Obsidian for yet, and Linux on arm64.
 
 ## Development
 

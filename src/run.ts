@@ -3,10 +3,10 @@ import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { Options } from "./args.ts";
 import { connect, PageReloaded, type Page } from "./cdp.ts";
-import { defaultCacheDir, installObsidian, programOfApp, workDir } from "./install.ts";
+import { defaultCacheDir, installObsidian, programOfApp, resolveVersionKept, workDir } from "./install.ts";
 import { chooseScreen, freePort, makeScreen, start, startArgs, type Running } from "./launch.ts";
 import { parsePlugin, placePlugin, removePlaced, type Placed } from "./plugins.ts";
-import { resolveVersion, type Fetch } from "./releases.ts";
+import type { Fetch } from "./releases.ts";
 import { offerRunner, runCode, startCommand, turnOn, whenDone, whenIndexed, whenReady, type Outcome } from "./session.ts";
 import { keepSettings, prepareProfile, restoreSettings, type Kept } from "./vault.ts";
 
@@ -141,10 +141,11 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       throw new RunError(`There is no Obsidian at "${options.obsidianApp}".`, EXIT.usage);
     }
   } else {
-    const version = await lap("resolve", () => resolveVersion(options.obsidianVersion, io.fetch as unknown as Fetch)).catch((error: unknown) => {
+    const cache = options.cacheDir ?? defaultCacheDir(io.env);
+    const version = await lap("resolve", () => resolveVersionKept(options.obsidianVersion, cache, io.fetch as unknown as Fetch)).catch((error: unknown) => {
       throw new RunError(error instanceof Error ? error.message : String(error), EXIT.usage);
     });
-    const installed = await lap("fetch", () => installObsidian(version, options.cacheDir ?? defaultCacheDir(io.env), io.fetch, io.say)).catch((error: unknown) => {
+    const installed = await lap("fetch", () => installObsidian(version, cache, io.fetch, io.say)).catch((error: unknown) => {
       throw new RunError(error instanceof Error ? error.message : String(error), EXIT.obsidian);
     });
     program = installed.program;
