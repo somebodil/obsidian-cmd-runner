@@ -3,31 +3,24 @@ import { describe, it } from "node:test";
 import { chooseScreen, freePort, startArgs } from "./launch.ts";
 
 describe("chooseScreen", () => {
-  const none = (): boolean => false;
-  const xvfb = (command: string): boolean => command === "Xvfb";
-
   it("has only the screen of the computer outside Linux", () => {
-    assert.equal(chooseScreen("darwin", {}, false, xvfb), "shown");
+    assert.equal(chooseScreen("darwin", {}, false), "shown");
   });
 
-  it("makes a screen for the run on a server", () => {
-    assert.equal(chooseScreen("linux", {}, false, xvfb), "made");
+  it("uses no screen on Linux, on a server and on a computer with a screen alike", () => {
+    assert.equal(chooseScreen("linux", {}, false), "none");
+    assert.equal(chooseScreen("linux", { DISPLAY: ":0" }, false), "none");
+    assert.equal(chooseScreen("linux", {}, true), "none");
   });
 
-  it("hides the window on a computer with a screen, unless it is to be shown", () => {
-    assert.equal(chooseScreen("linux", { DISPLAY: ":0" }, false, xvfb), "made");
-    assert.equal(chooseScreen("linux", { DISPLAY: ":0" }, true, xvfb), "shown");
-    assert.equal(chooseScreen("linux", { WAYLAND_DISPLAY: "wayland-0" }, false, none), "shown");
-  });
-
-  it("does without a screen when none can be made and there is none", () => {
-    assert.equal(chooseScreen("linux", {}, false, none), "none");
-    assert.equal(chooseScreen("linux", {}, true, none), "none");
+  it("shows the window on a computer with a screen when asked to", () => {
+    assert.equal(chooseScreen("linux", { DISPLAY: ":0" }, true), "shown");
+    assert.equal(chooseScreen("linux", { WAYLAND_DISPLAY: "wayland-0" }, true), "shown");
   });
 
   it("takes the one that is chosen by hand", () => {
-    assert.equal(chooseScreen("linux", { OBSIDIAN_CMD_RUNNER_SCREEN: "none" }, false, xvfb), "none");
-    assert.equal(chooseScreen("linux", { OBSIDIAN_CMD_RUNNER_SCREEN: "sideways" }, false, xvfb), "made");
+    assert.equal(chooseScreen("linux", { OBSIDIAN_CMD_RUNNER_SCREEN: "made" }, false), "made");
+    assert.equal(chooseScreen("linux", { OBSIDIAN_CMD_RUNNER_SCREEN: "sideways" }, false), "none");
   });
 });
 

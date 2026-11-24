@@ -10,7 +10,7 @@ Not made by Obsidian, and not one of its tools. Obsidian is not part of this pac
 
 - Node.js 22.18 or later
 - Linux (x64 or arm64) or macOS
-- On Linux nothing else: the window is drawn on a screen that is made for the run when `Xvfb` is installed, as it is on the build servers of GitHub, and Obsidian runs with no screen at all when it is not. `OBSIDIAN_CMD_RUNNER_SCREEN` chooses by hand: `made`, `none`, or `shown` for the screen of the computer.
+- On Linux nothing else: Obsidian runs with no screen at all. Nothing of it is looked at in a run, so it needs nothing to draw on.
 
 ## What it does when told nothing else
 
@@ -85,6 +85,12 @@ Measured with a command that takes a fifth of a second, with Obsidian in the cac
 A site of 302 notes with 304 diagrams is built on such a server in 3 seconds, and the whole job, from the checkout to the site, takes under 20. The first run with a version fetches Obsidian, which takes as long as 130 MB take to arrive.
 
 Which version is the newest is asked of GitHub at most every ten minutes.
+
+## The window
+
+On Linux there is no window, and nothing has to be installed for one. On macOS the window of Obsidian opens for the time of the run: there is no way there to start it without one.
+
+A plugin that goes by the size of the window finds a small one where there is no screen. For such a plugin, `OBSIDIAN_CMD_RUNNER_SCREEN=made` gives Obsidian a screen of 1440 by 900 that is made for the run, which needs `Xvfb` to be installed. `--show`, on a computer with a screen, shows the window as it is.
 
 ## What happens to the vault
 

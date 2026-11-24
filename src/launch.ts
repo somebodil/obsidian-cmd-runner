@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
 
 /** A port nothing listens on. Asked of the system, which gives one that is free now. */
@@ -26,13 +26,15 @@ export type Screen =
 
 /**
  * Which screen a run uses. Outside Linux there is only the screen of the
- * computer. On Linux the window is hidden unless it is to be shown: on a
- * screen made for the run when the program for that is installed, as it is
- * on the build servers of GitHub, and else with no screen at all.
+ * computer. On Linux there is none, unless the window is to be shown:
+ * nothing of Obsidian is looked at in a run, so it needs nothing to draw
+ * on, and nothing has to be installed for it.
  *
- * @param forced `OBSIDIAN_CMD_RUNNER_SCREEN`, to choose one of them by hand
+ * A screen made for the run is there for a plugin that goes by the size of
+ * the window, which is small without a screen. It is chosen by hand, with
+ * `OBSIDIAN_CMD_RUNNER_SCREEN=made`, and needs `Xvfb`.
  */
-export function chooseScreen(platform: string, env: NodeJS.ProcessEnv, show: boolean, has: (command: string) => boolean = hasCommand): Screen {
+export function chooseScreen(platform: string, env: NodeJS.ProcessEnv, show: boolean): Screen {
   if (platform !== "linux") {
     return "shown";
   }
@@ -41,10 +43,7 @@ export function chooseScreen(platform: string, env: NodeJS.ProcessEnv, show: boo
     return forced;
   }
   const hasScreen = (env.DISPLAY ?? "") !== "" || (env.WAYLAND_DISPLAY ?? "") !== "";
-  if (show && hasScreen) {
-    return "shown";
-  }
-  return has("Xvfb") ? "made" : hasScreen ? "shown" : "none";
+  return show && hasScreen ? "shown" : "none";
 }
 
 /**
@@ -75,10 +74,6 @@ export function startArgs(profile: string, port: number, screen: Screen, platfor
     }
   }
   return args;
-}
-
-export function hasCommand(command: string): boolean {
-  return spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" }).status === 0;
 }
 
 /**
