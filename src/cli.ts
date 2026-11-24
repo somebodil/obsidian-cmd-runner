@@ -5,7 +5,7 @@ import { resolveVersion, type Fetch } from "./releases.ts";
 import { EXIT, run, RunError, type Io } from "./run.ts";
 import { listCode, type Listed } from "./session.ts";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 /** The program: reads the command line, does the run, and answers with the number to end with */
 export async function main(argv: readonly string[]): Promise<number> {

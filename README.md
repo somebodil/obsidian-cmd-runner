@@ -85,7 +85,7 @@ obsidian-cmd-runner commands --vault notes --plugin owner/repo
 ```
 
 ```sh
-obsidian-cmd-runner commands --vault notes --plugin philoserf/obsidian-vault-changelog
+obsidian-cmd-runner commands --vault notes --plugin obsidian-vault-changelog
 ```
 
 ```
@@ -109,7 +109,6 @@ Each of these was run this way before it was put on the list: with Obsidian 1.15
 | Plugin | Command | What it does |
 | --- | --- | --- |
 | Obsidian itself | `daily-notes` | Makes the daily note of today, from the folder and template its settings name |
-| [vault-to-site](https://github.com/somebodil/vault-to-site) 0.1.0 | `vault-to-site:build-again` | Builds a website of the notes its settings name. It takes them as `settings` among what the command is given: `--arg 'settings={...}'`, or in the file of `--args-file`. |
 | [Find orphaned files and broken links](https://github.com/vinzent03/find-unlinked-files) 1.11.0 | `find-unlinked-files:find-unlinked-files`<br>`find-unlinked-files:find-unresolved-link`<br>`find-unlinked-files:find-files-without-tags`<br>`find-unlinked-files:find-empty-files` | Each writes a note with what it found: notes nothing links to, links that lead nowhere, notes without tags, empty notes |
 | [Vault Changelog](https://github.com/philoserf/obsidian-vault-changelog) 2.0.0 | `obsidian-vault-changelog:update-changelog` | Writes `Changelog.md`, the notes that were changed last |
 | [Periodic Notes](https://github.com/liamcain/obsidian-periodic-notes) 0.0.17 | `periodic-notes:open-daily-note` | Makes the note of today. The notes of the week and the month need its settings. |
@@ -216,8 +215,11 @@ obsidian-cmd-runner resolve-version                     # print the version that
 | Written as | What is used |
 | --- | --- |
 | `owner/repo` | The latest release of that repository on GitHub |
-| `owner/repo@tag` | That release |
+| An id, as `dataview` | The community plugin with that id: the latest release of the repository that the [list of Obsidian](https://github.com/obsidianmd/obsidian-releases/blob/HEAD/community-plugins.json) names for it. The id is the one in the address of the plugin, and the one its commands start with. |
+| `owner/repo@tag`, `id@tag` | That release |
 | A folder | A folder with `main.js` and `manifest.json`, as the one you build your own plugin in |
+
+A name with no slash is a folder when there is a folder of that name where you are, and an id when there is none. Write `./name` to say that a folder is meant.
 
 A plugin the vault has already is used as it is, also when the same plugin is named with `--plugin`: what is installed in a vault is the choice of its owner.
 
@@ -365,6 +367,7 @@ What makes a command good to run with nobody there:
 
 - Obsidian is started with a profile of its own and with the port that a browser's developer tools talk through, and is driven through that port. This is how the plugins are turned on without a hand on the window, and it is not something Obsidian promises to keep.
 - The work of a command is followed with what Node.js, which Obsidian has in its page, knows of what is started and by what. That too is not something Obsidian promises to keep.
+- A community plugin that is named by its id is looked up in the list Obsidian itself reads, which is kept on GitHub by the makers of Obsidian. Where that list cannot be reached, the plugin is named by its repository.
 - The licence of Obsidian lets you install and run it "on machines operated by or for you". A run on your own vault, on your computer or on a build server working for you, is that. It does not let you run Obsidian as a service for others, or pass Obsidian on: which is why it is fetched on each computer and is in no package or image of this project.
 
 ## What was tried, and what was not

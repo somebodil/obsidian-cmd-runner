@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { parsePlugin, placePlugin, releaseFileUrl, removePlaced } from "./plugins.ts";
+import { COMMUNITY_LIST, findCommunityPlugin, parsePlugin, placePlugin, releaseFileUrl, removePlaced } from "./plugins.ts";
 
 const noFolder = (): boolean => false;
 
@@ -19,10 +19,47 @@ describe("parsePlugin", () => {
     assert.deepEqual(parsePlugin("build/plugin", (path) => path === "build/plugin"), { kind: "folder", path: "build/plugin" });
   });
 
-  it("refuses what is neither", () => {
-    assert.throws(() => parsePlugin("just-a-name", noFolder), /is not a plugin/);
+  it("takes a name with no slash that is no folder for the id of a community plugin, with or without a release", () => {
+    assert.deepEqual(parsePlugin("dataview", noFolder), { kind: "community", id: "dataview", tag: null });
+    assert.deepEqual(parsePlugin("obsidian-vault-changelog@2.0.0", noFolder), { kind: "community", id: "obsidian-vault-changelog", tag: "2.0.0" });
+    assert.deepEqual(parsePlugin("dataview", (path) => path === "dataview"), { kind: "folder", path: "dataview" });
+  });
+
+  it("refuses what is none of them", () => {
     assert.throws(() => parsePlugin("a/b/c", noFolder), /is not a plugin/);
+    assert.throws(() => parsePlugin("two words", noFolder), /is not a plugin/);
     assert.throws(() => parsePlugin(" ", noFolder), /needs a name/);
+  });
+});
+
+describe("findCommunityPlugin", () => {
+  const list = JSON.stringify([
+    { id: "dataview", name: "Dataview", repo: "blacksmithgu/obsidian-dataview" },
+    { id: "QuickAdd", name: "QuickAdd", repo: "chhoumann/quickadd" },
+    { id: "broken", name: "Broken", repo: "not a repository" },
+    { name: "no id" },
+  ]);
+  const answering = (body: string, status = 200, asked: string[] = []): typeof fetch =>
+    ((url: string) => {
+      asked.push(String(url));
+      return Promise.resolve(new Response(body, { status }));
+    }) as unknown as typeof fetch;
+
+  it("finds the repository of an id in the list Obsidian reads", async () => {
+    const asked: string[] = [];
+    assert.deepEqual(await findCommunityPlugin("dataview", answering(list, 200, asked)), { owner: "blacksmithgu", repo: "obsidian-dataview" });
+    assert.deepEqual(asked, [COMMUNITY_LIST]);
+  });
+
+  it("finds an id that was written in another case", async () => {
+    assert.deepEqual(await findCommunityPlugin("quickadd", answering(list)), { owner: "chhoumann", repo: "quickadd" });
+  });
+
+  it("says what to do when the id is not in the list, or the list cannot be read", async () => {
+    await assert.rejects(findCommunityPlugin("nowhere", answering(list)), /is not the id of a community plugin.*owner\/repo/);
+    await assert.rejects(findCommunityPlugin("broken", answering(list)), /which is not one/);
+    await assert.rejects(findCommunityPlugin("dataview", answering("no", 503)), /could not be read \(GitHub answered 503\).*owner\/repo/);
+    await assert.rejects(findCommunityPlugin("dataview", answering("{}")), /is not a list/);
   });
 });
 
@@ -99,6 +136,46 @@ describe("placePlugin", () => {
       assert.equal(placed.placed, false);
       await removePlaced([placed]);
       assert.equal(await readFile(join(work, "plugins", "from-web", "main.js"), "utf8"), "the user's");
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it("fetches a community plugin from the repository the list names, and the release that was asked for", async () => {
+    const work = await mkdtemp(join(tmpdir(), "ocr-test-"));
+    try {
+      const asked: string[] = [];
+      const files: Record<string, string> = {
+        "community-plugins.json": JSON.stringify([{ id: "from-list", repo: "o/r" }]),
+        "manifest.json": JSON.stringify({ id: "from-list" }),
+        "main.js": "x",
+      };
+      const noting = ((url: string) => {
+        asked.push(String(url));
+        const body = files[String(url).split("/").pop() ?? ""];
+        return Promise.resolve(body === undefined ? new Response("no", { status: 404 }) : new Response(body, { status: 200 }));
+      }) as unknown as typeof fetch;
+      const placed = await placePlugin({ kind: "community", id: "from-list", tag: "1.2.0" }, join(work, "plugins"), work, noting, null);
+      assert.equal(placed.id, "from-list");
+      assert.equal(placed.placed, true);
+      assert.ok(asked.includes("https://github.com/o/r/releases/download/1.2.0/main.js"), asked.join(", "));
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it("does not ask for the list when the vault has the community plugin already", async () => {
+    const work = await mkdtemp(join(tmpdir(), "ocr-test-"));
+    try {
+      await mkdir(join(work, "plugins", "from-list"), { recursive: true });
+      const asked: string[] = [];
+      const noting = ((url: string) => {
+        asked.push(String(url));
+        return Promise.resolve(new Response("no", { status: 404 }));
+      }) as unknown as typeof fetch;
+      const placed = await placePlugin({ kind: "community", id: "from-list", tag: null }, join(work, "plugins"), work, noting, null);
+      assert.equal(placed.placed, false);
+      assert.deepEqual(asked, []);
     } finally {
       await rm(work, { recursive: true, force: true });
     }

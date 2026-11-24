@@ -7,7 +7,7 @@ export interface Options {
   obsidianVersion: string;
   /** An Obsidian that is installed already: the app on macOS, the program elsewhere. Nothing is downloaded then. */
   obsidianApp: string | null;
-  /** Plugins to put into the vault for the run: `owner/repo`, `owner/repo@tag`, or a folder */
+  /** Plugins to put into the vault for the run: `owner/repo`, the id of a community plugin, either with `@tag`, or a folder */
   plugins: string[];
   /** Ids of commands, run one after the other */
   commands: string[];
@@ -88,7 +88,8 @@ Options
   --obsidian-version <v>       a version as 1.15.1, or latest (default: latest)
   --obsidian-app <path>        use an Obsidian that is installed, and fetch nothing
   --plugin <spec>              put a plugin into the vault for the run; may be given again
-                               owner/repo, owner/repo@tag, or a folder with main.js and manifest.json
+                               owner/repo, the id of a community plugin (either with @tag for
+                               one release), or a folder with main.js and manifest.json
   --command <id>               the id of a command, as plugin-id:command-id; may be given again
   --eval <file.js>             run a file of JavaScript inside Obsidian, before the commands
   --settings <id=file.json>    the settings of a plugin for the run: its data.json; may be given again

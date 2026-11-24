@@ -296,11 +296,11 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
   });
 
   // With the plugin that builds a site, when a built copy of it is at hand: VAULT_TO_SITE=<folder with main.js and manifest.json>
-  it("builds a site of the marked notes with the settings it is given", { skip: process.env.VAULT_TO_SITE === undefined }, async () => {
+  it("builds a site of the marked notes with the settings it is given, and of the whole vault with none", { skip: process.env.VAULT_TO_SITE === undefined }, async () => {
     const vault = await newVault("site");
     await writeFile(join(vault, "Home.md"), "---\npublish: true\n---\n# Home\n\n[[Other]]\n\n```mermaid\nflowchart LR\n  A --> B\n```\n");
     await writeFile(join(vault, "Other.md"), "# Other\n\nZZNOTMARKED\n");
-    const site: Partial<Options> = { plugins: [process.env.VAULT_TO_SITE ?? ""], commands: ["vault-to-site:build-again"] };
+    const site: Partial<Options> = { plugins: [process.env.VAULT_TO_SITE ?? ""], commands: ["vault-to-site:build"] };
     const result = await go(vault, { ...site, args: { settings: { ticks: { on: [""] }, only: "publish: true", format: "folder", folder: "_site" } } });
     assert.equal(result.ok, true, JSON.stringify(result.commands));
     const built = result.commands[0]?.result as { notes: string[]; keptOut: { notMarked: number }; unfinished: string[] };
@@ -315,11 +315,14 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     assert.doesNotMatch(page, /ZZNOTMARKED/);
     assert.deepEqual((await readdir(vault)).sort(), ["Home.md", "Other.md", "Sub", "_site"]);
 
-    // Without a word on what goes in, nothing is built
+    // Without a word on what goes in, the whole vault does, as the plugin is to begin with: into an archive
     const bare = await newVault("site-bare");
-    const refused = await go(bare, site);
-    assert.equal(refused.ok, false);
-    assert.match(refused.commands[0]?.error ?? "", /Nothing is ticked/);
+    const whole = await go(bare, site);
+    assert.equal(whole.ok, true, JSON.stringify(whole.commands));
+    const all = whole.commands[0]?.result as { place: string; notes: string[] };
+    assert.equal(all.place, "vault-to-site.zip");
+    assert.ok(all.notes.includes("Home.md"), all.notes.join(", "));
+    assert.ok(existsSync(join(bare, "vault-to-site.zip")));
   });
 
   it("refuses what cannot work before it starts Obsidian", async () => {

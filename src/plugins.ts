@@ -2,29 +2,79 @@ import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
 /** Where a plugin for a run comes from */
-export type PluginSource = { kind: "folder"; path: string } | { kind: "release"; owner: string; repo: string; tag: string | null };
+export type PluginSource =
+  | { kind: "folder"; path: string }
+  | { kind: "release"; owner: string; repo: string; tag: string | null }
+  /** A plugin of the list Obsidian shows as its community plugins, by the id it has there */
+  | { kind: "community"; id: string; tag: string | null };
+
+/** The list Obsidian itself reads to show its community plugins: each with its id and the repository it is fetched from */
+export const COMMUNITY_LIST = "https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json";
+
+const REPO = /^([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+?)$/;
 
 /** The files Obsidian takes of a plugin. The style sheet is not always there. */
 const FILES = ["manifest.json", "main.js", "styles.css"] as const;
 
 /**
- * Reads how a plugin was named on the command line: a folder, or a
- * repository on GitHub as `owner/repo`, with `@tag` for one release.
+ * Reads how a plugin was named on the command line: a folder, a
+ * repository on GitHub as `owner/repo`, or the id of a community plugin,
+ * the last two with `@tag` for one release.
  * What starts with a dot or a slash, or is a folder that exists, is a folder.
  */
 export function parsePlugin(spec: string, isFolder: (path: string) => boolean): PluginSource {
   const text = spec.trim();
   if (text === "") {
-    throw new Error("A plugin needs a name: owner/repo, owner/repo@tag, or a folder.");
+    throw new Error("A plugin needs a name: owner/repo, the id of a community plugin, or a folder.");
   }
   if (text.startsWith(".") || isAbsolute(text) || isFolder(text)) {
     return { kind: "folder", path: text };
   }
   const found = /^([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+?)(?:@(.+))?$/.exec(text);
-  if (found === null) {
-    throw new Error(`"${spec}" is not a plugin: write owner/repo, owner/repo@tag, or a folder.`);
+  if (found !== null) {
+    return { kind: "release", owner: found[1] ?? "", repo: found[2] ?? "", tag: found[3] ?? null };
   }
-  return { kind: "release", owner: found[1] ?? "", repo: found[2] ?? "", tag: found[3] ?? null };
+  // A name with no slash that is no folder: the id a plugin has in the list of community plugins
+  const byId = /^([A-Za-z0-9][A-Za-z0-9_-]*)(?:@(.+))?$/.exec(text);
+  if (byId === null) {
+    throw new Error(`"${spec}" is not a plugin: write owner/repo, the id of a community plugin, or a folder. A release is named with @tag after it.`);
+  }
+  return { kind: "community", id: byId[1] ?? "", tag: byId[2] ?? null };
+}
+
+/**
+ * Finds the repository of a community plugin in the list of Obsidian.
+ * The id is the one Obsidian shows in the address of the plugin, and the
+ * one its commands start with.
+ */
+export async function findCommunityPlugin(id: string, fetcher: typeof fetch): Promise<{ owner: string; repo: string }> {
+  const reply = await fetcher(COMMUNITY_LIST, { redirect: "follow" });
+  if (!reply.ok) {
+    throw new Error(`The list of community plugins could not be read (GitHub answered ${String(reply.status)}). Name the plugin "${id}" by its repository, as owner/repo.`);
+  }
+  let list: unknown;
+  try {
+    list = JSON.parse(await reply.text()) as unknown;
+  } catch {
+    list = null;
+  }
+  if (!Array.isArray(list)) {
+    throw new Error(`The list of community plugins could not be read: it is not a list. Name the plugin "${id}" by its repository, as owner/repo.`);
+  }
+  const entries = list.filter((one): one is { id: string; repo: string } => {
+    const entry = one as { id?: unknown; repo?: unknown } | null;
+    return typeof entry === "object" && entry !== null && typeof entry.id === "string" && typeof entry.repo === "string";
+  });
+  // As it is written first. Ids are told apart by upper and lower case in the list, but nobody remembers which a plugin took.
+  const entry = entries.find((one) => one.id === id) ?? entries.find((one) => one.id.toLowerCase() === id.toLowerCase());
+  if (entry === undefined) {
+    throw new Error(`"${id}" is not the id of a community plugin of Obsidian. A plugin that is not in that list is named by its repository, as owner/repo, or by a folder.`);
+  }
+  const found = REPO.exec(entry.repo.trim());
+  if (found === null) {
+    throw new Error(`The list of community plugins names "${entry.repo}" as the repository of "${id}", which is not one.`);
+  }
+  return { owner: found[1] ?? "", repo: found[2] ?? "" };
 }
 
 /** Where the file of a release is fetched from, without an account */
@@ -127,6 +177,15 @@ export async function placePlugin(source: PluginSource, pluginsDir: string, base
         throw new Error(`The folder "${source.path}" is not a plugin: it has no ${file}.`);
       }
     }
+  } else if (source.kind === "community") {
+    // The id is known before anything is fetched: the plugin the vault has is used, and the list is not asked for
+    const has = join(pluginsDir, source.id);
+    if (await isThere(has)) {
+      return { id: source.id, placed: false, folder: has };
+    }
+    const repository = await findCommunityPlugin(source.id, fetcher);
+    from = `${source.id} (${repository.owner}/${repository.repo})`;
+    files = await fetchRelease({ ...repository, tag: source.tag }, fetcher, token);
   } else {
     from = `${source.owner}/${source.repo}`;
     files = await fetchRelease(source, fetcher, token);

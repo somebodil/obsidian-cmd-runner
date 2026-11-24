@@ -11,7 +11,7 @@ inputs:
     description: A version of Obsidian as 1.15.1, or latest
     default: latest
   plugins:
-    description: "Plugins to put into the vault for the run, one a line: owner/repo, owner/repo@tag, or a folder"
+    description: "Plugins to put into the vault for the run, one a line: owner/repo, the id of a community plugin, either with @tag, or a folder"
     default: ""
   commands:
     description: "Ids of commands to run, one a line, as plugin-id:command-id"
