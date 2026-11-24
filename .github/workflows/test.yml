@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Once a week, with the Obsidian that is the latest then: a new Obsidian is tried before anybody finds
+  # out that it does not work. See COMPATIBILITY.md.
+  schedule:
+    - cron: "17 5 * * 1"
   workflow_dispatch:
     inputs:
       obsidian-version:
@@ -31,7 +35,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ["${{ inputs.obsidian-version || 'latest' }}", "1.8.10"]
+        # The latest, one between, and the oldest that is promised: see COMPATIBILITY.md
+        version: ["${{ inputs.obsidian-version || 'latest' }}", "1.8.10", "1.6.7"]
         # A screen made for the run, and no screen at all
         screen: [made, none]
     steps:

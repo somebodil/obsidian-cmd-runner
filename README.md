@@ -186,7 +186,7 @@ A command is taken to have ended when nothing it started is going on, and nothin
 | Starts work in a way the run cannot see: a message to a worker or to another window, with nothing in the plugin waiting for the answer | Ends too early. Name a file to wait for. A plugin that waits for the answer is followed. |
 | Is of Obsidian itself, not of a plugin | Is followed only by what it asks of the system. What Obsidian waits for inside its own code is not counted: some of it stays open for as long as Obsidian runs. |
 
-It needs an Obsidian that has Node.js in its page in the form that can follow work. That was tried with 1.15.1 and 1.8.10. Where it is missing, the run goes on after it has started the command, as with `--wait none`.
+It needs an Obsidian that has Node.js in its page in the form that can follow work. Every version from 1.6.7 on that was tried has it. Before each command the run tries it on something small, and where it does not hold, the run says so and goes on after it has started the command, as with `--wait none`.
 
 ## What happens to the vault
 
@@ -200,6 +200,8 @@ A run is not meant to change a vault.
 Do not run it on a vault that is open in your own Obsidian at the same time: two Obsidians writing the settings of one vault get in each other's way.
 
 ## Which Obsidian, and how long a run takes
+
+**It works with Obsidian from 1.6.7 on, and is kept working with the newest.** The tests run in a real Obsidian with the oldest version and the latest, on every change and once a week, so that a new Obsidian is tried before you find out that it does not work. A version is not dropped to make a change easier. Which versions were tried on which kind of computer, and what the runner uses of Obsidian that Obsidian does not promise, is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 `--obsidian-version` takes any version Obsidian has published with a program for your kind of computer: see [its releases](https://github.com/obsidianmd/obsidian-releases/releases). The first run with a version fetches it into a cache, and later runs take it from there. Which version is the newest is asked of GitHub at most every ten minutes.
 
@@ -311,7 +313,8 @@ What makes a command good to run with nobody there:
 - **On Linux on arm64** with Obsidian 1.15.1 and 1.8.10 and no screen: the same commands, and with 1.15.1 a site of 142 real notes.
 - **A site** was built through vault-to-site on all three: on a build server from a vault of 304 notes, of which the 302 that were marked went in, with every diagram and formula drawn. The site was the same, file for file, with a screen made for the run and with none.
 - **Following the work of a command** was tried on Linux (x64 and arm64) and on macOS with commands that know nothing of the runner and work each in another way: an `async` function, work that is started and let go, timers and callbacks with no promise at all, another program, waiting for the page to be drawn and for something fetched. Also one that fails at once and one that fails later, one that leaves a repeating timer, a long timer, a notice and a promise nobody keeps behind, and one that waits for a click. And with vault-to-site building a site of 142 notes while what it says of itself was left out: three runs ended 0.8 to 0.9 seconds after the build was done, none before.
-- **Not tried:** Windows, which it does not fetch Obsidian for yet. Following the work of a command with an Obsidian older than 1.8.10.
+- **Older versions of Obsidian** on Linux on arm64: 1.6.7, 1.7.7 and 1.11.7 pass all of the above. 1.5.12 and 1.4.16 do not start there with no screen.
+- **Not tried:** Windows, which it does not fetch Obsidian for yet.
 
 ## Development
 

@@ -257,6 +257,27 @@ const followWork = (isTraced: boolean): string => `(() => {
     }
   };
 
+  /**
+   * Tries, on something small, whether work can be followed in this
+   * Obsidian: whether what is started goes on under the name it was started
+   * under after a wait, and whether Node.js tells of the promises made
+   * there. An Obsidian in which it cannot is not guessed at: the work of a
+   * command is then not followed at all, and the run says so.
+   */
+  work.check = async () => {
+    const trial = {};
+    let told = 0;
+    const listening = hooks.createHook({ init(id, type) { if (type === "PROMISE" && mine.getStore() === trial) told++; } });
+    try {
+      listening.enable();
+      const kept = await mine.run(trial, async () => { await null; return mine.getStore() === trial; });
+      return kept === true && told > 0 && mine.getStore() !== trial;
+    } catch (error) {
+      return false;
+    } finally {
+      listening.disable();
+    }
+  };
   /** The timer of the page as it was before: for waiting that is not work of the command */
   work.sleep = (callback, millis) => kept.setTimeout.call(window, callback, millis);
   // The notices of Obsidian, as they are shown and as their words change
@@ -340,12 +361,14 @@ export interface Work {
 
 /** Puts `window.obsidianCmdRunner` into the page, fresh for one command */
 export async function offerRunner(page: Page, args: Record<string, unknown>, isTraced = false): Promise<void> {
-  await page.evaluate(`(() => {
+  await page.evaluate(`(async () => {
     const state = { claimed: false, finished: false, ok: false, result: null, error: null };
     let settle;
     const done = new Promise((resolve) => { settle = resolve; });
     window.__obsidianCmdRunner?.work?.stop();
-    window.__obsidianCmdRunner = { state, done, work: ${followWork(isTraced)} };
+    let work = ${followWork(isTraced)};
+    if (work && !(await work.check())) work = null;
+    window.__obsidianCmdRunner = { state, done, work };
     window.obsidianCmdRunner = {
       version: 1,
       args: ${asCode(args)},

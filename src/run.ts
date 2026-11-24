@@ -387,6 +387,7 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
       const from = clock();
       record("eval", "said", await lap("commands", () => within(offerRunner(open, args).then(() => runCode(open, code)), limit, "The code", open, live)), from);
     }
+    let saidNotFollowed = false;
     // The file that says a command is done, when one was named
     const file = options.wait.startsWith("file:") ? resolve(vault, options.wait.slice(5)) : null;
     for (const id of commands) {
@@ -437,6 +438,10 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
           .finally(() => {
             waiting = false;
           });
+      } else if (options.wait === "auto" && !saidNotFollowed) {
+        // Not passed over in silence: the run goes on while the command may still be working
+        saidNotFollowed = true;
+        io.say(`This Obsidian cannot follow the work of a command, so the run does not wait for "${id}". Name a file to wait for with --wait file:PATH.`);
       }
       await stopFollowing(open);
       if (!record(id, ended, outcome, from)) {
