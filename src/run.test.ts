@@ -106,8 +106,6 @@ describe("run, up to the start of Obsidian", () => {
       return Promise.resolve(body === undefined ? new Response("no", { status: 404 }) : new Response(body, { status: 200 }));
     }) as unknown as typeof fetch;
   const io = (fetcher: typeof fetch): Io => ({ say: () => undefined, console: () => undefined, fetch: fetcher, env: {} });
-  const site = { "manifest.json": JSON.stringify({ id: "vault-to-site" }), "main.js": "x" };
-  const siteManifest = "https://github.com/somebodil/vault-to-site/releases/latest/download/manifest.json";
 
   it("does not start Obsidian when the run was given up before, and leaves the vault as it was", async () => {
     const { work, vault, options, started } = await prepare("probe");
@@ -145,33 +143,18 @@ describe("run, up to the start of Obsidian", () => {
     }
   });
 
-  it("fetches the plugin that builds a site when nothing else was asked, also when another plugin is named", async () => {
+  it("runs nothing when it is told nothing: no plugin is fetched, and Obsidian is not started", async () => {
     const { work, vault, options, started } = await prepare("other");
     try {
       const asked: string[] = [];
-      // The program in place of Obsidian ends at once: the run gets as far as starting it
-      await assert.rejects(run({ ...options, commands: [] }, io(answering(site, asked))), exitIs(EXIT.obsidian));
-      assert.equal(started(), true);
-      assert.ok(asked.includes(siteManifest), `asked for: ${asked.join(", ")}`);
-      assert.deepEqual(await readdir(vault), ["Note.md"], "both plugins are taken away again");
+      await assert.rejects(run({ ...options, commands: [] }, io(answering({}, asked))), (error: unknown) => error instanceof RunError && error.exit === EXIT.usage && /Nothing to run/.test(error.message));
+      // A plugin that is named changes nothing: none of them is the one of this program
+      await assert.rejects(run({ ...options, commands: [], plugins: ["owner/repo"] }, io(answering({}, asked))), exitIs(EXIT.usage));
+      assert.deepEqual(asked, []);
+      assert.equal(started(), false);
+      assert.deepEqual(await readdir(vault), ["Note.md"]);
     } finally {
       await rm(work, { recursive: true, force: true });
-    }
-  });
-
-  it("does not fetch that plugin when a plugin that was named is it, when the vault has it, or when a command is named", async () => {
-    const named = await prepare("vault-to-site");
-    const has = await prepare("other");
-    const told = await prepare("other");
-    try {
-      const asked: string[] = [];
-      await assert.rejects(run({ ...named.options, commands: [] }, io(answering(site, asked))), exitIs(EXIT.obsidian));
-      await mkdir(join(has.vault, ".obsidian", "plugins", "vault-to-site"), { recursive: true });
-      await assert.rejects(run({ ...has.options, commands: [] }, io(answering(site, asked))), exitIs(EXIT.obsidian));
-      await assert.rejects(run(told.options, io(answering(site, asked))), exitIs(EXIT.obsidian));
-      assert.deepEqual(asked, []);
-    } finally {
-      await Promise.all([named, has, told].map((one) => rm(one.work, { recursive: true, force: true })));
     }
   });
 });

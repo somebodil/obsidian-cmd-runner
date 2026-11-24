@@ -296,12 +296,12 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
   });
 
   // With the plugin that builds a site, when a built copy of it is at hand: VAULT_TO_SITE=<folder with main.js and manifest.json>
-  it("builds a site of the marked notes when told nothing else", { skip: process.env.VAULT_TO_SITE === undefined }, async () => {
+  it("builds a site of the marked notes with the settings it is given", { skip: process.env.VAULT_TO_SITE === undefined }, async () => {
     const vault = await newVault("site");
     await writeFile(join(vault, "Home.md"), "---\npublish: true\n---\n# Home\n\n[[Other]]\n\n```mermaid\nflowchart LR\n  A --> B\n```\n");
     await writeFile(join(vault, "Other.md"), "# Other\n\nZZNOTMARKED\n");
-    await writeFile(join(vault, "vault-to-site.json"), JSON.stringify({ ticks: { on: [""] }, only: "publish: true", format: "folder", folder: "_site" }));
-    const result = await go(vault, { plugins: [process.env.VAULT_TO_SITE ?? ""] });
+    const site: Partial<Options> = { plugins: [process.env.VAULT_TO_SITE ?? ""], commands: ["vault-to-site:build-again"] };
+    const result = await go(vault, { ...site, args: { settings: { ticks: { on: [""] }, only: "publish: true", format: "folder", folder: "_site" } } });
     assert.equal(result.ok, true, JSON.stringify(result.commands));
     const built = result.commands[0]?.result as { notes: string[]; keptOut: { notMarked: number }; unfinished: string[] };
     assert.deepEqual(built.notes, ["Home.md"]);
@@ -313,16 +313,17 @@ describe("a run in a real Obsidian", { concurrency: false }, () => {
     const page = await readFile(join(vault, "_site", "data", "n", pages[0] ?? ""), "utf8");
     assert.match(page, /class=\\"mermaid[^"]*\\"><svg/, "the diagram is drawn");
     assert.doesNotMatch(page, /ZZNOTMARKED/);
-    assert.deepEqual((await readdir(vault)).sort(), ["Home.md", "Other.md", "Sub", "_site", "vault-to-site.json"]);
+    assert.deepEqual((await readdir(vault)).sort(), ["Home.md", "Other.md", "Sub", "_site"]);
 
     // Without a word on what goes in, nothing is built
     const bare = await newVault("site-bare");
-    const refused = await go(bare, { plugins: [process.env.VAULT_TO_SITE ?? ""] });
+    const refused = await go(bare, site);
     assert.equal(refused.ok, false);
     assert.match(refused.commands[0]?.error ?? "", /Nothing is ticked/);
   });
 
   it("refuses what cannot work before it starts Obsidian", async () => {
+    await assert.rejects(go(await newVault("nothing"), {}), (error: unknown) => error instanceof RunError && error.exit === EXIT.usage && /Nothing to run/.test(error.message));
     await assert.rejects(go(join(work, "nowhere"), { commands: ["a:b"] }), (error: unknown) => error instanceof RunError && error.exit === EXIT.usage);
     await assert.rejects(go(await newVault("bad-plugin"), { plugins: [join(work, "nowhere")], commands: ["a:b"] }), /is not a plugin|has no manifest/);
   });

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-cmd-runner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runs a command of an Obsidian plugin without the window of Obsidian: on a server, or from a script",
   "license": "MIT",
   "author": "somebodil",

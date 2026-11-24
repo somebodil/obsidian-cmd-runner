@@ -15,5 +15,5 @@ export { DEFAULTS, parseArgs, type Options } from "./args.ts";
 export { main } from "./cli.ts";
 export { defaultCacheDir, installObsidian, type Installed } from "./install.ts";
 export { resolveVersion } from "./releases.ts";
-export { EXIT, run, RunError, SITE_PLUGIN, type CommandResult, type Io, type RunResult } from "./run.ts";
+export { EXIT, run, RunError, type CommandResult, type Io, type RunResult } from "./run.ts";
 export type { RunnerInPage } from "./session.ts";

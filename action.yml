@@ -1,5 +1,5 @@
 name: obsidian-cmd-runner
-description: Runs a command of an Obsidian plugin in a vault, without the window of Obsidian. Told nothing else, it builds a site with vault-to-site.
+description: Runs a command of an Obsidian plugin in a vault, without the window of Obsidian.
 branding:
   icon: terminal
   color: purple
@@ -18,9 +18,6 @@ inputs:
     default: ""
   args:
     description: What the commands are given, as JSON
-    default: ""
-  config:
-    description: A file of settings for vault-to-site, when no command is named
     default: ""
   timeout:
     description: Seconds a command may take
@@ -66,7 +63,6 @@ runs:
         while IFS= read -r line; do [ -n "$line" ] && args+=(--plugin "$line"); done <<< "$INPUT_PLUGINS"
         while IFS= read -r line; do [ -n "$line" ] && args+=(--command "$line"); done <<< "$INPUT_COMMANDS"
         if [ -n "$INPUT_ARGS" ]; then printf '%s' "$INPUT_ARGS" > "$RUNNER_TEMP/obsidian-cmd-runner-args.json"; args+=(--args-file "$RUNNER_TEMP/obsidian-cmd-runner-args.json"); fi
-        if [ -n "${{ inputs.config }}" ]; then args+=(--config "${{ inputs.config }}"); fi
         if [ "${{ inputs.vault-plugins }}" = "false" ]; then args+=(--no-vault-plugins); fi
         node "$GITHUB_ACTION_PATH/bin/obsidian-cmd-runner.js" "${args[@]}" | tee "$RUNNER_TEMP/obsidian-cmd-runner-result.json"
         { echo "result<<OBSIDIAN_CMD_RUNNER_EOF"; cat "$RUNNER_TEMP/obsidian-cmd-runner-result.json"; echo "OBSIDIAN_CMD_RUNNER_EOF"; } >> "$GITHUB_OUTPUT"

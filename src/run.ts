@@ -10,9 +10,6 @@ import type { Fetch } from "./releases.ts";
 import { dropUnkept, offerRunner, runCode, startCommand, stopFollowing, windowLeftOpen, turnOn, whenDone, whenIndexed, whenReady, workLeft, type Outcome, type Work } from "./session.ts";
 import { keepSettings, prepareProfile, restoreSettings, type Kept } from "./vault.ts";
 
-/** The plugin that builds a site, and its command: what a run does when it is told nothing else */
-export const SITE_PLUGIN = { id: "vault-to-site", source: "somebodil/vault-to-site", command: "vault-to-site:build-again", config: "vault-to-site.json" };
-
 /** How a run can end. The number is what the program ends with. */
 export const EXIT = { ok: 0, failed: 1, usage: 2, obsidian: 3, timeout: 124, stopped: 130 } as const;
 
@@ -227,29 +224,22 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     }
   };
 
+  // Told nothing, nothing is run: no plugin and no command is the one of this program
+  if (options.commands.length === 0 && options.evalFile === null && options.evalCode === null) {
+    throw new RunError(
+      'Nothing to run: name a command with --command, or a file of JavaScript with --eval. "obsidian-cmd-runner commands" lists the commands there are.',
+      EXIT.usage,
+    );
+  }
   const vault = resolve(options.vault);
   if (!isFolder(vault)) {
     throw new RunError(`"${options.vault}" is not a folder: --vault names the folder of a vault.`, EXIT.usage);
   }
 
-  // What to run. Told nothing, a site is built.
   const commands = [...options.commands];
   const args = { ...options.args };
   const configDir = ".obsidian";
   const pluginsDir = join(vault, configDir, "plugins");
-  const site = commands.length === 0 && options.evalFile === null && options.evalCode === null;
-  if (site) {
-    commands.push(SITE_PLUGIN.command);
-  }
-  // The settings of a site go with its command, also when it is named among others: as after a command that makes a file the site is to hold
-  const config = options.config !== null ? resolve(options.config) : join(vault, SITE_PLUGIN.config);
-  if (args.settings === undefined && (options.config !== null || (commands.includes(SITE_PLUGIN.command) && existsSync(config)))) {
-    try {
-      args.settings = JSON.parse(await readFile(config, "utf8")) as unknown;
-    } catch (error) {
-      throw new RunError(`"${config}" could not be read as JSON: ${error instanceof Error ? error.message : String(error)}`, EXIT.usage);
-    }
-  }
   const code = options.evalCode ?? (options.evalFile === null ? null : await readFile(resolve(options.evalFile), "utf8").catch(() => null));
   if (options.evalFile !== null && code === null) {
     throw new RunError(`"${options.evalFile}" could not be read.`, EXIT.usage);
@@ -322,10 +312,6 @@ export async function run(options: Options, io: Io, stop: Promise<void> = new Pr
     await lap("plugins", async () => {
       for (const source of sources) {
         await place(source);
-      }
-      // The plugin that builds the site is fetched when nothing has brought it: not the vault, and not a plugin that was named
-      if (site && !isFolder(join(pluginsDir, SITE_PLUGIN.id))) {
-        await place(sourceOf(SITE_PLUGIN.source));
       }
       // The settings a plugin is given for the run: its own, when it has some, are put back after it
       for (const [id, from] of Object.entries(options.settings)) {

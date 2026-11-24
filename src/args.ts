@@ -19,8 +19,6 @@ export interface Options {
   evalCode: string | null;
   /** What a command is given: `window.obsidianCmdRunner.args` */
   args: Record<string, unknown>;
-  /** A file of settings for the plugin that builds a site, when no command is named */
-  config: string | null;
   /**
    * When a command counts as done: `auto` (it says so itself, or else its
    * work is followed until none is left), `none` (it is not waited for), or
@@ -62,7 +60,6 @@ export const DEFAULTS: Options = {
   evalCode: null,
   settings: {},
   args: {},
-  config: null,
   wait: "auto",
   timeout: 600,
   vaultPlugins: true,
@@ -84,7 +81,7 @@ Usage
   obsidian-cmd-runner install [options]         only fetch Obsidian
   obsidian-cmd-runner resolve-version [version] print the version that would be used
 
-With no --command and no --eval, a site is built with the plugin vault-to-site.
+A run needs something to run: --command or --eval, at least one of them.
 
 Options
   --vault <folder>             the vault (default: the folder you are in)
@@ -97,7 +94,6 @@ Options
   --settings <id=file.json>    the settings of a plugin for the run: its data.json; may be given again
   --arg <key=value>            what the command is given; may be given again
   --args-file <file.json>      the same, from a file
-  --config <file.json>         settings for vault-to-site (default: vault-to-site.json in the vault)
   --wait <auto|none|file:PATH> when a command counts as done (default: auto:
                                it says so, or else when its work has ended)
   --timeout <seconds>          how long a command may take (default: 600)
@@ -214,9 +210,6 @@ export function parseArgs(argv: readonly string[], readJson: (path: string) => u
           Object.assign(options.args, read);
           break;
         }
-        case "--config":
-          options.config = need();
-          break;
         case "--wait": {
           const wait = need();
           if (wait !== "auto" && wait !== "none" && !(wait.startsWith("file:") && wait.length > 5)) {

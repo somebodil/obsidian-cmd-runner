@@ -63,24 +63,7 @@ obsidian-cmd-runner --vault notes \
   --command first:prepare --command second:export
 ```
 
-**Build a website of your notes.** This is what it does when told nothing else, with the plugin [vault-to-site](https://github.com/somebodil/vault-to-site):
-
-```sh
-obsidian-cmd-runner --vault notes
-```
-
-What goes into the site is said in a file `vault-to-site.json` in the vault:
-
-```json
-{
-  "ticks": { "on": [""] },
-  "only": "publish: true",
-  "format": "folder",
-  "folder": "_site"
-}
-```
-
-That is: of the whole vault, the notes that have the property `publish: true`, written as a folder `_site`. On a server nobody looks the list of notes over before a build, so let a mark on each note say what goes in: a note then does not go in by being new.
+**Told nothing, it runs nothing.** No plugin and no command is the one of this tool: a run with no `--command` and no `--eval` ends with the number 2 and says what is missing.
 
 **How it ended** is the number the program ends with:
 
@@ -101,10 +84,13 @@ A command is named by its id, `plugin-id:command-id`. Obsidian does not show ids
 obsidian-cmd-runner commands --vault notes --plugin owner/repo
 ```
 
+```sh
+obsidian-cmd-runner commands --vault notes --plugin philoserf/obsidian-vault-changelog
 ```
-vault-to-site
-  vault-to-site:build        vault-to-site: Build a site
-  vault-to-site:build-again  vault-to-site: Build again without the dialog
+
+```
+obsidian-vault-changelog
+  obsidian-vault-changelog:update-changelog  Vault Changelog: Update changelog
 ```
 
 - The list holds the commands of the plugins you name with `--plugin` and of the plugins the vault has turned on.
@@ -123,7 +109,7 @@ Each of these was run this way before it was put on the list: with Obsidian 1.15
 | Plugin | Command | What it does |
 | --- | --- | --- |
 | Obsidian itself | `daily-notes` | Makes the daily note of today, from the folder and template its settings name |
-| [vault-to-site](https://github.com/somebodil/vault-to-site) 0.1.0 | `vault-to-site:build-again` | Builds a website of the notes that `vault-to-site.json` names. This is what runs when no command is named. |
+| [vault-to-site](https://github.com/somebodil/vault-to-site) 0.1.0 | `vault-to-site:build-again` | Builds a website of the notes its settings name. It takes them as `settings` among what the command is given: `--arg 'settings={...}'`, or in the file of `--args-file`. |
 | [Find orphaned files and broken links](https://github.com/vinzent03/find-unlinked-files) 1.11.0 | `find-unlinked-files:find-unlinked-files`<br>`find-unlinked-files:find-unresolved-link`<br>`find-unlinked-files:find-files-without-tags`<br>`find-unlinked-files:find-empty-files` | Each writes a note with what it found: notes nothing links to, links that lead nowhere, notes without tags, empty notes |
 | [Vault Changelog](https://github.com/philoserf/obsidian-vault-changelog) 2.0.0 | `obsidian-vault-changelog:update-changelog` | Writes `Changelog.md`, the notes that were changed last |
 | [Periodic Notes](https://github.com/liamcain/obsidian-periodic-notes) 0.0.17 | `periodic-notes:open-daily-note` | Makes the note of today. The notes of the week and the month need its settings. |
@@ -211,7 +197,6 @@ What to know of all of them:
 | `--obsidian-app <path>` | Use an Obsidian that is installed, and fetch nothing. |
 | `--no-vault-plugins` | Leave the plugins the vault has turned on off. |
 | `--keep` | Leave in the vault what the run put there. |
-| `--config <file.json>` | Settings for vault-to-site. To begin with, `vault-to-site.json` in the vault, whenever its command is among those that run. |
 | `--cache-dir <folder>` | Where Obsidian is kept between runs. To begin with, `.obsidian-cmd` in your home folder, on every kind of computer. `OBSIDIAN_CMD_RUNNER_CACHE` in the environment names another folder as well. |
 | `--github-token <token>` | For a plugin in a repository that is not public. `GITHUB_TOKEN` in the environment does the same. |
 | `--json` | Print the result as JSON. |
@@ -290,7 +275,7 @@ Measured with a command that takes a fifth of a second, with Obsidian in the cac
 | macOS (a laptop) | 0.6 s | 1.5 s |
 | Linux (a build server of GitHub) | 2 to 3 s | 3 to 4 s |
 
-A site of 302 notes with 304 diagrams is built on such a server in 3 seconds, and the whole job, from the checkout to the site, takes under 20.
+With the plugin vault-to-site, a site of 302 notes with 304 diagrams is built on such a server in 3 seconds, and the whole job, from the checkout to the site, takes under 20.
 
 **The window.** On Linux there is no window, and nothing has to be installed for one. On macOS the window of Obsidian opens for the time of the run: there is no way there to start it without one. A plugin that goes by the size of the window finds a small one where there is no screen. For such a plugin, `OBSIDIAN_CMD_RUNNER_SCREEN=made` gives Obsidian a screen of 1440 by 900 that is made for the run, which needs `Xvfb` to be installed. `--show`, on a computer with a screen, shows the window as it is.
 
@@ -298,7 +283,7 @@ A site of 302 notes with 304 diagrams is built on such a server in 3 seconds, an
 
 ```yaml
 jobs:
-  site:
+  run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -309,7 +294,7 @@ jobs:
           commands: plugin-id:command-id
 ```
 
-With no `plugins` and no `commands`, the site is built, into the folder its settings name: put that where your pages are served from.
+`commands` has to name a command: with none, nothing is run and the step fails.
 
 | Input | |
 | --- | --- |
@@ -318,7 +303,6 @@ With no `plugins` and no `commands`, the site is built, into the folder its sett
 | `plugins` | Plugins for the run, one a line |
 | `commands` | Ids of commands, one a line |
 | `args` | What the commands are given, as JSON |
-| `config` | A file of settings for vault-to-site |
 | `timeout` | Seconds a command may take |
 | `vault-plugins` | `false` to leave the plugins of the vault off |
 | `github-token` | For a plugin in a repository that is not public |
