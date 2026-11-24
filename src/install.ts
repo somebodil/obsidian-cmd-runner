@@ -7,15 +7,15 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { findAsset, normalVersion, resolveVersion, type Fetch } from "./releases.ts";
 
-/** Where Obsidian is kept between runs */
-export function defaultCacheDir(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): string {
+/**
+ * Where Obsidian is kept between runs: `.obsidian-cmd` in the home folder,
+ * on every kind of computer, or the folder `OBSIDIAN_CMD_RUNNER_CACHE` names.
+ */
+export function defaultCacheDir(env: NodeJS.ProcessEnv = process.env): string {
   if (env.OBSIDIAN_CMD_RUNNER_CACHE !== undefined && env.OBSIDIAN_CMD_RUNNER_CACHE !== "") {
     return env.OBSIDIAN_CMD_RUNNER_CACHE;
   }
-  if (platform === "darwin") {
-    return join(homedir(), "Library", "Caches", "obsidian-cmd-runner");
-  }
-  return join(env.XDG_CACHE_HOME !== undefined && env.XDG_CACHE_HOME !== "" ? env.XDG_CACHE_HOME : join(homedir(), ".cache"), "obsidian-cmd-runner");
+  return join(env.HOME !== undefined && env.HOME !== "" ? env.HOME : homedir(), ".obsidian-cmd");
 }
 
 /** The program inside a folder that holds an unpacked Obsidian */

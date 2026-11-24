@@ -49,7 +49,7 @@ runs:
       run: echo "version=$(node "$GITHUB_ACTION_PATH/bin/obsidian-cmd-runner.js" resolve-version "${{ inputs.obsidian-version }}")" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@v4
       with:
-        path: ~/.cache/obsidian-cmd-runner
+        path: ~/.obsidian-cmd
         key: obsidian-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
     - id: run
       shell: bash
@@ -58,10 +58,10 @@ runs:
         INPUT_COMMANDS: ${{ inputs.commands }}
         INPUT_ARGS: ${{ inputs.args }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        OBSIDIAN_CMD_RUNNER_CACHE: ~/.cache/obsidian-cmd-runner
+        OBSIDIAN_CMD_RUNNER_CACHE: ~/.obsidian-cmd
       run: |
         set -euo pipefail
-        export OBSIDIAN_CMD_RUNNER_CACHE="$HOME/.cache/obsidian-cmd-runner"
+        export OBSIDIAN_CMD_RUNNER_CACHE="$HOME/.obsidian-cmd"
         args=(--vault "${{ inputs.vault }}" --obsidian-version "${{ steps.version.outputs.version }}" --timeout "${{ inputs.timeout }}" --json)
         while IFS= read -r line; do [ -n "$line" ] && args+=(--plugin "$line"); done <<< "$INPUT_PLUGINS"
         while IFS= read -r line; do [ -n "$line" ] && args+=(--command "$line"); done <<< "$INPUT_COMMANDS"

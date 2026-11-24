@@ -103,7 +103,8 @@ Options
   --timeout <seconds>          how long a command may take (default: 600)
   --no-vault-plugins           leave the plugins the vault has turned on off
   --keep                       leave in the vault what the run put there
-  --cache-dir <folder>         where Obsidian is kept between runs
+  --cache-dir <folder>         where Obsidian is kept between runs (default: .obsidian-cmd in
+                               your home folder, or what OBSIDIAN_CMD_RUNNER_CACHE names)
   --github-token <token>       for a plugin in a repository that is not public (or set GITHUB_TOKEN)
   --json                       print the result as JSON
   --verbose                    print what Obsidian writes to its console

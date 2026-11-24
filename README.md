@@ -212,7 +212,7 @@ What to know of all of them:
 | `--no-vault-plugins` | Leave the plugins the vault has turned on off. |
 | `--keep` | Leave in the vault what the run put there. |
 | `--config <file.json>` | Settings for vault-to-site. To begin with, `vault-to-site.json` in the vault, whenever its command is among those that run. |
-| `--cache-dir <folder>` | Where Obsidian is kept between runs. |
+| `--cache-dir <folder>` | Where Obsidian is kept between runs. To begin with, `.obsidian-cmd` in your home folder, on every kind of computer. `OBSIDIAN_CMD_RUNNER_CACHE` in the environment names another folder as well. |
 | `--github-token <token>` | For a plugin in a repository that is not public. `GITHUB_TOKEN` in the environment does the same. |
 | `--json` | Print the result as JSON. |
 | `--verbose` | Print what Obsidian writes to its console, how long each part took, and for a command that took too long, where in the code its work was started. |
@@ -279,7 +279,7 @@ Do not run it on a vault that is open in your own Obsidian at the same time: two
 
 **It works with Obsidian from 1.6.7 on, and is kept working with the newest.** The tests run in a real Obsidian with the oldest version and the latest, on every change and once a week, so that a new Obsidian is tried before you find out that it does not work. A version is not dropped to make a change easier. Which versions were tried on which kind of computer, and what the runner uses of Obsidian that Obsidian does not promise, is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
-`--obsidian-version` takes any version Obsidian has published with a program for your kind of computer: see [its releases](https://github.com/obsidianmd/obsidian-releases/releases). The first run with a version fetches it into a cache, and later runs take it from there. Which version is the newest is asked of GitHub at most every ten minutes.
+`--obsidian-version` takes any version Obsidian has published with a program for your kind of computer: see [its releases](https://github.com/obsidianmd/obsidian-releases/releases). The first run with a version fetches it into `.obsidian-cmd` in your home folder, and later runs take it from there. The folder holds nothing that cannot be fetched again: delete it, or a version in it, whenever you like. Which version is the newest is asked of GitHub at most every ten minutes.
 
 A run is as far as it can be from your own Obsidian: it has a profile of its own, which is thrown away after the run, and it does not check for updates.
 

@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { defaultCacheDir, programIn, programOfApp, resolveVersionKept } from "./install.ts";
 import type { Fetch } from "./releases.ts";
 
 describe("where things are", () => {
-  it("keeps Obsidian where the system keeps what can be fetched again", () => {
-    assert.match(defaultCacheDir({}, "darwin"), /Library\/Caches\/obsidian-cmd-runner$/);
-    assert.equal(defaultCacheDir({ XDG_CACHE_HOME: "/x" }, "linux"), "/x/obsidian-cmd-runner");
-    assert.match(defaultCacheDir({}, "linux"), /\.cache\/obsidian-cmd-runner$/);
-    assert.equal(defaultCacheDir({ OBSIDIAN_CMD_RUNNER_CACHE: "/mine", XDG_CACHE_HOME: "/x" }, "linux"), "/mine");
+  it("keeps Obsidian in one folder of the home folder, or where it is told", () => {
+    assert.equal(defaultCacheDir({ HOME: "/home/me" }), join("/home/me", ".obsidian-cmd"));
+    // The same on every kind of computer: where the system keeps its caches does not count
+    assert.equal(defaultCacheDir({ HOME: "/home/me", XDG_CACHE_HOME: "/x" }), join("/home/me", ".obsidian-cmd"));
+    // With no HOME, as on Windows: the home folder the system names
+    assert.equal(defaultCacheDir({}), join(homedir(), ".obsidian-cmd"));
+    assert.equal(defaultCacheDir({ HOME: "" }), join(homedir(), ".obsidian-cmd"));
+    assert.equal(defaultCacheDir({ OBSIDIAN_CMD_RUNNER_CACHE: "/mine", HOME: "/home/me" }), "/mine");
+    assert.equal(defaultCacheDir({ OBSIDIAN_CMD_RUNNER_CACHE: "", HOME: "/home/me" }), join("/home/me", ".obsidian-cmd"));
   });
 
   it("finds the program in what was unpacked, and in an app that is installed", () => {
